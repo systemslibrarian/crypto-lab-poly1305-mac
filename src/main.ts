@@ -42,3 +42,24 @@ console.table(demoSteps);
 console.groupEnd();
 
 mountApp(document.querySelector<HTMLDivElement>('#app')!);
+
+(function initThemeToggle() {
+	const button = document.getElementById('theme-toggle') as HTMLButtonElement | null;
+	if (!button) return;
+
+	function apply(theme: string): void {
+		document.documentElement.setAttribute('data-theme', theme);
+		localStorage.setItem('theme', theme);
+		const isDark = theme === 'dark';
+		button!.textContent = isDark ? '🌙' : '☀️';
+		button!.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+	}
+
+	const current = document.documentElement.getAttribute('data-theme') ?? 'dark';
+	apply(current);
+
+	button.addEventListener('click', () => {
+		const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+		apply(next);
+	});
+})();

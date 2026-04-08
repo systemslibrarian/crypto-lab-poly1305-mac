@@ -57,9 +57,10 @@ function createTemplate(): string {
   return `
     <main class="page-shell">
       <header class="hero-panel">
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode" style="position: absolute; top: 0; right: 0;">🌙</button>
         <div class="hero-copy">
           <a class="portfolio-badge" href="https://systemslibrarian.github.io/crypto-lab/" target="_blank" rel="noreferrer">
-            systemslibrarian.github.io/crypto-lab/
+            systemslibrarian.github.io/crypto-lab/ <span class="sr-only">(opens in new tab)</span>
           </a>
           <p class="eyebrow">Crypto Lab Portfolio</p>
           <h1>Poly1305 MAC</h1>
@@ -96,7 +97,7 @@ function createTemplate(): string {
           <article class="panel-card">
             <div class="panel-header">
               <h3>Key</h3>
-              <button class="ghost-button" type="button" id="copy-key-button">Copy</button>
+              <button class="ghost-button" type="button" id="copy-key-button" aria-label="Copy key">Copy</button>
             </div>
             <p class="panel-copy">Shared 32-byte key for the playground and the key-reuse warning below.</p>
             <div class="mono-block mono-hex key-display" id="key-display"></div>
@@ -107,7 +108,7 @@ function createTemplate(): string {
               <h3>Message</h3>
               <button class="action-button" type="button" id="compute-mac-button">Compute MAC</button>
             </div>
-            <textarea id="message-input" class="message-input" rows="4">${DEFAULT_MESSAGE}</textarea>
+            <textarea id="message-input" class="message-input" rows="4" aria-label="Message to authenticate">${DEFAULT_MESSAGE}</textarea>
           </article>
 
           <article class="panel-card panel-card--wide">
@@ -116,7 +117,7 @@ function createTemplate(): string {
                 <h3>Authentication Tag</h3>
                 <p class="panel-copy">128-bit tag (16 bytes)</p>
               </div>
-              <button class="ghost-button" type="button" id="copy-tag-button">Copy</button>
+              <button class="ghost-button" type="button" id="copy-tag-button" aria-label="Copy tag">Copy</button>
             </div>
             <div class="tag-grid" id="tag-display"></div>
             <div class="mono-inline mono-hex" id="tag-hex-display"></div>
@@ -204,18 +205,18 @@ function createTemplate(): string {
         <div class="reuse-grid">
           <article class="panel-card">
             <h3>Message 1</h3>
-            <textarea id="reuse-message-one" class="message-input" rows="3">${DEFAULT_REUSE_MESSAGE_ONE}</textarea>
+            <textarea id="reuse-message-one" class="message-input" rows="3" aria-label="Key reuse message 1">${DEFAULT_REUSE_MESSAGE_ONE}</textarea>
             <div class="mono-inline mono-hex" id="reuse-tag-one"></div>
           </article>
 
           <article class="panel-card">
             <h3>Message 2</h3>
-            <textarea id="reuse-message-two" class="message-input" rows="3">${DEFAULT_REUSE_MESSAGE_TWO}</textarea>
+            <textarea id="reuse-message-two" class="message-input" rows="3" aria-label="Key reuse message 2">${DEFAULT_REUSE_MESSAGE_TWO}</textarea>
             <div class="mono-inline mono-hex" id="reuse-tag-two"></div>
           </article>
         </div>
 
-        <div class="warning-banner" id="reuse-warning-banner" hidden>
+        <div class="warning-banner" id="reuse-warning-banner" role="alert" hidden>
           <strong>⚠ Poly1305 keys must NEVER be reused.</strong>
           <span>Two MACs under the same key can be combined to forge a third.</span>
         </div>
@@ -486,6 +487,7 @@ function activateTab(elements: UIElements, activeTab: TabKey): void {
     const isActive = button.dataset.tab === activeTab;
     button.classList.toggle('is-active', isActive);
     button.setAttribute('aria-selected', String(isActive));
+    button.tabIndex = isActive ? 0 : -1;
   }
 
   for (const panel of elements.tabPanels) {
@@ -499,6 +501,27 @@ function wireTabs(elements: UIElements): void {
   for (const button of elements.tabButtons) {
     button.addEventListener('click', () => {
       activateTab(elements, button.dataset.tab as TabKey);
+      button.focus();
+    });
+  }
+
+  const tablist = elements.tabButtons[0]?.parentElement;
+  if (tablist) {
+    tablist.addEventListener('keydown', (event: KeyboardEvent) => {
+      const current = elements.tabButtons.findIndex((b) => b === document.activeElement);
+      if (current === -1) return;
+
+      let next = current;
+      if (event.key === 'ArrowRight') next = (current + 1) % elements.tabButtons.length;
+      else if (event.key === 'ArrowLeft') next = (current - 1 + elements.tabButtons.length) % elements.tabButtons.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = elements.tabButtons.length - 1;
+      else return;
+
+      event.preventDefault();
+      const target = elements.tabButtons[next];
+      activateTab(elements, target.dataset.tab as TabKey);
+      target.focus();
     });
   }
 }
