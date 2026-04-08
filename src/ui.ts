@@ -1,20 +1,60 @@
-function renderTagCells(tamperedIndex?: number): string {
-  return Array.from({ length: 16 }, (_, index) => {
-    const hue = 210 - Math.round((index / 15) * 210);
-    const modifier = tamperedIndex === index ? ' tag-cell--tampered' : '';
+import {
+  bytesToHex,
+  computeMACResult,
+  generateKey,
+  tamperMessage,
+  tamperTag,
+  verifyMAC,
+  type MACResult,
+} from './mac.ts';
+import { clampR, computeSteps, type PolyStep } from './poly-math.ts';
 
-    return `
-      <span
-        class="tag-cell${modifier}"
-        style="--tag-color: hsl(${hue}deg 74% 58%);"
-        aria-label="Tag byte ${index + 1}"
-      >00</span>
-    `;
-  }).join('');
+const DEFAULT_MESSAGE = 'Authenticate this message.';
+const DEFAULT_REUSE_MESSAGE_ONE = 'Transfer $100';
+const DEFAULT_REUSE_MESSAGE_TWO = 'Transfer $999';
+const ZERO_TAG = new Uint8Array(16);
+
+type StatusTone = 'pending' | 'valid' | 'invalid';
+type TabKey = 'what' | 'math' | 'constant-time';
+
+interface AppState {
+  key: Uint8Array;
+  macResult: MACResult | null;
 }
 
-export function mountApp(target: HTMLDivElement): void {
-  target.innerHTML = `
+interface UIElements {
+  keyDisplay: HTMLDivElement;
+  messageInput: HTMLTextAreaElement;
+  tagDisplay: HTMLDivElement;
+  tagHexDisplay: HTMLDivElement;
+  tamperedMessageDisplay: HTMLDivElement;
+  tamperedTagDisplay: HTMLDivElement;
+  verifyOriginalButton: HTMLButtonElement;
+  verifyMessageButton: HTMLButtonElement;
+  verifyTagButton: HTMLButtonElement;
+  verifyOriginalStatus: HTMLParagraphElement;
+  verifyMessageStatus: HTMLParagraphElement;
+  verifyTagStatus: HTMLParagraphElement;
+  rHexDisplay: HTMLDivElement;
+  rDecimalDisplay: HTMLParagraphElement;
+  mathStepsBody: HTMLTableSectionElement;
+  reuseMessageOne: HTMLTextAreaElement;
+  reuseMessageTwo: HTMLTextAreaElement;
+  reuseTagOne: HTMLDivElement;
+  reuseTagTwo: HTMLDivElement;
+  reuseWarningBanner: HTMLDivElement;
+  generateKeyButton: HTMLButtonElement;
+  copyKeyButton: HTMLButtonElement;
+  computeMacButton: HTMLButtonElement;
+  copyTagButton: HTMLButtonElement;
+  showMathButton: HTMLButtonElement;
+  computeReuseButton: HTMLButtonElement;
+  tabButtons: HTMLButtonElement[];
+  tabPanels: HTMLElement[];
+}
+
+function createTemplate(): string {
+  return `
     <main class="page-shell">
       <header class="hero-panel">
         <div class="hero-copy">
@@ -59,7 +99,7 @@ export function mountApp(target: HTMLDivElement): void {
               <button class="ghost-button" type="button" id="copy-key-button">Copy</button>
             </div>
             <p class="panel-copy">Shared 32-byte key for the playground and the key-reuse warning below.</p>
-            <div class="mono-block key-display" id="key-display">0000000000000000000000000000000000000000000000000000000000000000</div>
+            <div class="mono-block mono-hex key-display" id="key-display"></div>
           </article>
 
           <article class="panel-card panel-card--wide">
@@ -67,7 +107,7 @@ export function mountApp(target: HTMLDivElement): void {
               <h3>Message</h3>
               <button class="action-button" type="button" id="compute-mac-button">Compute MAC</button>
             </div>
-            <textarea id="message-input" class="message-input" rows="4">Authenticate this message.</textarea>
+            <textarea id="message-input" class="message-input" rows="4">${DEFAULT_MESSAGE}</textarea>
           </article>
 
           <article class="panel-card panel-card--wide">
@@ -78,8 +118,8 @@ export function mountApp(target: HTMLDivElement): void {
               </div>
               <button class="ghost-button" type="button" id="copy-tag-button">Copy</button>
             </div>
-            <div class="tag-grid" id="tag-display">${renderTagCells()}</div>
-            <div class="mono-inline" id="tag-hex-display">00000000000000000000000000000000</div>
+            <div class="tag-grid" id="tag-display"></div>
+            <div class="mono-inline mono-hex" id="tag-hex-display"></div>
           </article>
         </div>
 
@@ -87,23 +127,23 @@ export function mountApp(target: HTMLDivElement): void {
           <article class="scenario-card">
             <h3>Scenario 1 — Verify Original</h3>
             <p class="scenario-copy">Run verification against the unchanged message and tag.</p>
-            <button class="action-button" type="button" id="verify-original-button">Verify Original</button>
+            <button class="action-button" type="button" id="verify-original-button" disabled>Verify Original</button>
             <p class="scenario-status" id="verify-original-status">Awaiting MAC</p>
           </article>
 
           <article class="scenario-card">
             <h3>Scenario 2 — Tamper Message</h3>
             <p class="scenario-copy">Modified message shown below: original plus a single trailing space.</p>
-            <div class="mono-block" id="tampered-message-display">Authenticate this message. </div>
-            <button class="action-button" type="button" id="verify-message-button">Verify Tampered Message</button>
+            <div class="preview-block" id="tampered-message-display"></div>
+            <button class="action-button" type="button" id="verify-message-button" disabled>Verify Tampered Message</button>
             <p class="scenario-status" id="verify-message-status">Awaiting MAC</p>
           </article>
 
           <article class="scenario-card">
             <h3>Scenario 3 — Tamper Tag</h3>
             <p class="scenario-copy">The original message is preserved, but byte 8 of the tag is flipped.</p>
-            <div class="tag-grid tag-grid--compact" id="tampered-tag-display">${renderTagCells(8)}</div>
-            <button class="action-button" type="button" id="verify-tag-button">Verify Tampered Tag</button>
+            <div class="tag-grid tag-grid--compact" id="tampered-tag-display"></div>
+            <button class="action-button" type="button" id="verify-tag-button" disabled>Verify Tampered Tag</button>
             <p class="scenario-status" id="verify-tag-status">Awaiting MAC</p>
           </article>
         </div>
@@ -121,8 +161,8 @@ export function mountApp(target: HTMLDivElement): void {
         <div class="math-summary-grid">
           <article class="panel-card">
             <h3>Clamped r</h3>
-            <div class="mono-block" id="r-hex-display">00000000000000000000000000000000</div>
-            <p class="math-decimal" id="r-decimal-display">0</p>
+            <div class="mono-block mono-hex" id="r-hex-display"></div>
+            <p class="math-decimal" id="r-decimal-display"></p>
           </article>
           <article class="panel-card">
             <h3>Prime Field</h3>
@@ -143,16 +183,7 @@ export function mountApp(target: HTMLDivElement): void {
                 <th>Acc After</th>
               </tr>
             </thead>
-            <tbody id="math-steps-body">
-              <tr>
-                <td>0</td>
-                <td class="mono-cell">00000000000000000000000000000000</td>
-                <td class="mono-cell">0</td>
-                <td class="mono-cell">0</td>
-                <td class="mono-cell">r</td>
-                <td class="mono-cell">0</td>
-              </tr>
-            </tbody>
+            <tbody id="math-steps-body"></tbody>
           </table>
         </div>
 
@@ -173,18 +204,18 @@ export function mountApp(target: HTMLDivElement): void {
         <div class="reuse-grid">
           <article class="panel-card">
             <h3>Message 1</h3>
-            <textarea id="reuse-message-one" class="message-input" rows="3">Transfer $100</textarea>
-            <div class="mono-inline" id="reuse-tag-one">00000000000000000000000000000000</div>
+            <textarea id="reuse-message-one" class="message-input" rows="3">${DEFAULT_REUSE_MESSAGE_ONE}</textarea>
+            <div class="mono-inline mono-hex" id="reuse-tag-one"></div>
           </article>
 
           <article class="panel-card">
             <h3>Message 2</h3>
-            <textarea id="reuse-message-two" class="message-input" rows="3">Transfer $999</textarea>
-            <div class="mono-inline" id="reuse-tag-two">00000000000000000000000000000000</div>
+            <textarea id="reuse-message-two" class="message-input" rows="3">${DEFAULT_REUSE_MESSAGE_TWO}</textarea>
+            <div class="mono-inline mono-hex" id="reuse-tag-two"></div>
           </article>
         </div>
 
-        <div class="warning-banner" id="reuse-warning-banner">
+        <div class="warning-banner" id="reuse-warning-banner" hidden>
           <strong>⚠ Poly1305 keys must NEVER be reused.</strong>
           <span>Two MACs under the same key can be combined to forge a third.</span>
         </div>
@@ -209,45 +240,370 @@ export function mountApp(target: HTMLDivElement): void {
         </div>
 
         <div class="info-tabs" role="tablist" aria-label="Poly1305 reference tabs">
-          <button class="tab-button is-active" id="tab-what" type="button" role="tab" aria-selected="true">What Poly1305 Is</button>
-          <button class="tab-button" id="tab-math" type="button" role="tab" aria-selected="false">The Math</button>
-          <button class="tab-button" id="tab-constant-time" type="button" role="tab" aria-selected="false">Constant-Time Verification</button>
+          <button class="tab-button is-active" id="tab-what" data-tab="what" type="button" role="tab" aria-selected="true" aria-controls="panel-what">What Poly1305 Is</button>
+          <button class="tab-button" id="tab-math" data-tab="math" type="button" role="tab" aria-selected="false" aria-controls="panel-math">The Math</button>
+          <button class="tab-button" id="tab-constant-time" data-tab="constant-time" type="button" role="tab" aria-selected="false" aria-controls="panel-constant-time">Constant-Time Verification</button>
         </div>
 
         <div class="info-panels">
-          <article class="info-panel is-active" id="panel-what" role="tabpanel" aria-labelledby="tab-what">
+          <article class="info-panel is-active" id="panel-what" data-panel="what" role="tabpanel" aria-labelledby="tab-what">
             <p>
-              Poly1305 is a one-time message authentication code. It outputs a 128-bit tag, giving a forgery chance of
-              about 2^-128 per attempt when used correctly. It was designed by Daniel J. Bernstein and evaluates a
-              polynomial over GF(2^130-5).
+              Poly1305 is a one-time MAC. Reusing its 32-byte key destroys the security model, so the same key must never
+              authenticate two different messages. When used correctly, its 128-bit tag gives an attacker about a 2^-128
+              forgery chance per attempt.
             </p>
             <p>
-              In ChaCha20-Poly1305, ChaCha20 derives a fresh one-time Poly1305 key from each nonce, which solves the
-              key-reuse problem automatically. Standalone Poly1305 should only be used when one-time key usage is
-              guaranteed.
-            </p>
-          </article>
-
-          <article class="info-panel" id="panel-math" role="tabpanel" aria-labelledby="tab-math" hidden>
-            <p>
-              The message is split into 16-byte blocks. Each block is read as a little-endian integer after appending
-              a 0x01 byte, then the accumulator updates as accumulator = (accumulator + block) * r mod p.
+              It was designed by Daniel J. Bernstein and evaluates a polynomial over GF(2^130-5). Verification must also
+              be constant time: comparing tags with early exits creates a timing side channel.
             </p>
             <p>
-              The first half of the key becomes the clamped value r, and the second half becomes s. After processing
-              every block, the final tag is (accumulator + s) mod 2^128.
+              In ChaCha20-Poly1305, ChaCha20 derives a fresh one-time Poly1305 key from each unique nonce. That is what
+              makes the construction safe in normal protocol use. Standalone Poly1305 is only appropriate when one-time
+              key usage can be guaranteed externally.
             </p>
           </article>
 
-          <article class="info-panel" id="panel-constant-time" role="tabpanel" aria-labelledby="tab-constant-time" hidden>
+          <article class="info-panel" id="panel-math" data-panel="math" role="tabpanel" aria-labelledby="tab-math" hidden>
             <p>
-              Verification must compare tags in constant time. Returning early on the first mismatched byte leaks how
-              much of the tag was correct, which can become an oracle for an attacker. A fixed-length XOR accumulation
-              avoids that timing leak.
+              The message is split into 16-byte blocks. Each block is interpreted as a little-endian integer after a
+              single 0x01 byte is appended, and the accumulator evolves as accumulator = (accumulator + block) * r mod p.
+            </p>
+            <p>
+              The first 16 bytes of the key become r after clamping, while the last 16 bytes become s. After all blocks
+              are processed, the final tag is (accumulator + s) mod 2^128.
+            </p>
+            <p>
+              Clamping r forces a restricted bit pattern that blocks classes of polynomial forgery attacks. The prime
+              p = 2^130 - 5 is chosen because it supports efficient reduction while remaining large enough for the padded
+              16-byte blocks Poly1305 consumes.
+            </p>
+          </article>
+
+          <article class="info-panel" id="panel-constant-time" data-panel="constant-time" role="tabpanel" aria-labelledby="tab-constant-time" hidden>
+            <p>
+              Safe verification recomputes the expected tag and compares every byte, even when the first byte already
+              differs. Returning early leaks how much of the candidate tag was correct, and that timing signal can help
+              attackers refine forgeries.
+            </p>
+            <p>
+              This demo uses a constant-time XOR accumulation: diff starts at zero, every byte contributes with XOR, and
+              verification succeeds only if diff is still zero after all 16 bytes have been processed.
             </p>
           </article>
         </div>
       </section>
     </main>
   `;
+}
+
+function requireElement<T extends Element>(root: ParentNode, selector: string): T {
+  const element = root.querySelector<T>(selector);
+
+  if (!element) {
+    throw new Error(`Missing required element: ${selector}`);
+  }
+
+  return element;
+}
+
+function collectElements(root: HTMLDivElement): UIElements {
+  return {
+    keyDisplay: requireElement(root, '#key-display'),
+    messageInput: requireElement(root, '#message-input'),
+    tagDisplay: requireElement(root, '#tag-display'),
+    tagHexDisplay: requireElement(root, '#tag-hex-display'),
+    tamperedMessageDisplay: requireElement(root, '#tampered-message-display'),
+    tamperedTagDisplay: requireElement(root, '#tampered-tag-display'),
+    verifyOriginalButton: requireElement(root, '#verify-original-button'),
+    verifyMessageButton: requireElement(root, '#verify-message-button'),
+    verifyTagButton: requireElement(root, '#verify-tag-button'),
+    verifyOriginalStatus: requireElement(root, '#verify-original-status'),
+    verifyMessageStatus: requireElement(root, '#verify-message-status'),
+    verifyTagStatus: requireElement(root, '#verify-tag-status'),
+    rHexDisplay: requireElement(root, '#r-hex-display'),
+    rDecimalDisplay: requireElement(root, '#r-decimal-display'),
+    mathStepsBody: requireElement(root, '#math-steps-body'),
+    reuseMessageOne: requireElement(root, '#reuse-message-one'),
+    reuseMessageTwo: requireElement(root, '#reuse-message-two'),
+    reuseTagOne: requireElement(root, '#reuse-tag-one'),
+    reuseTagTwo: requireElement(root, '#reuse-tag-two'),
+    reuseWarningBanner: requireElement(root, '#reuse-warning-banner'),
+    generateKeyButton: requireElement(root, '#generate-key-button'),
+    copyKeyButton: requireElement(root, '#copy-key-button'),
+    computeMacButton: requireElement(root, '#compute-mac-button'),
+    copyTagButton: requireElement(root, '#copy-tag-button'),
+    showMathButton: requireElement(root, '#show-math-button'),
+    computeReuseButton: requireElement(root, '#compute-reuse-button'),
+    tabButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tab]')),
+    tabPanels: Array.from(root.querySelectorAll<HTMLElement>('[data-panel]')),
+  };
+}
+
+function renderTagCells(bytes: Uint8Array, tamperedIndex?: number): string {
+  return Array.from({ length: 16 }, (_, index) => {
+    const byte = bytes[index] ?? 0;
+    const hue = 220 - Math.round((byte / 255) * 220);
+    const modifier = tamperedIndex === index ? ' tag-cell--tampered' : '';
+
+    return `
+      <span
+        class="tag-cell${modifier}"
+        style="--tag-color: hsl(${hue}deg 74% 58%);"
+        aria-label="Tag byte ${index + 1}"
+      >${byte.toString(16).padStart(2, '0').toUpperCase()}</span>
+    `;
+  }).join('');
+}
+
+function clampRBytes(key: Uint8Array): Uint8Array {
+  const clamped = new Uint8Array(key.slice(0, 16));
+  clamped[3] &= 0x0f;
+  clamped[7] &= 0x0f;
+  clamped[11] &= 0x0f;
+  clamped[15] &= 0x0f;
+  clamped[4] &= 0xfc;
+  clamped[8] &= 0xfc;
+  clamped[12] &= 0xfc;
+  return clamped;
+}
+
+function shortenHex(hex: string): string {
+  if (hex.length <= 18) {
+    return hex;
+  }
+
+  return `${hex.slice(0, 10)}...${hex.slice(-6)}`;
+}
+
+function setStatus(element: HTMLParagraphElement, text: string, tone: StatusTone): void {
+  element.textContent = text;
+  element.className = `scenario-status scenario-status--${tone}`;
+}
+
+function setVerificationEnabled(elements: UIElements, enabled: boolean): void {
+  elements.verifyOriginalButton.disabled = !enabled;
+  elements.verifyMessageButton.disabled = !enabled;
+  elements.verifyTagButton.disabled = !enabled;
+}
+
+function renderPlaceholderMathRow(elements: UIElements): void {
+  elements.mathStepsBody.innerHTML = `
+    <tr>
+      <td colspan="6" class="math-empty">Compute a MAC, then click Show Math to inspect the first four Poly1305 blocks.</td>
+    </tr>
+  `;
+}
+
+function resetMathPanel(elements: UIElements, key: Uint8Array): void {
+  elements.rHexDisplay.textContent = bytesToHex(clampRBytes(key));
+  elements.rDecimalDisplay.textContent = 'Run Show Math to compute the accumulator steps for the current message.';
+  renderPlaceholderMathRow(elements);
+}
+
+function renderMathRows(elements: UIElements, steps: PolyStep[], key: Uint8Array): void {
+  const clampedRHex = bytesToHex(clampRBytes(key));
+  const clampedRDecimal = clampR(key.subarray(0, 16)).toString();
+
+  elements.rHexDisplay.textContent = clampedRHex;
+  elements.rDecimalDisplay.textContent = clampedRDecimal;
+
+  if (steps.length === 0) {
+    elements.mathStepsBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="math-empty">This message has no bytes, so there are no Poly1305 blocks to visualize.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  const shortR = shortenHex(clampedRHex);
+
+  elements.mathStepsBody.innerHTML = steps
+    .map(
+      (step, index) => `
+        <tr class="math-row" style="animation-delay: ${index * 100}ms;">
+          <td>${step.blockIndex + 1}</td>
+          <td class="mono-cell mono-cell--hex">${step.blockHex}</td>
+          <td class="mono-cell">${step.blockValue}</td>
+          <td class="mono-cell">${step.accumulatorBefore}</td>
+          <td class="mono-cell mono-cell--hex">${shortR}</td>
+          <td class="mono-cell">${step.accumulatorAfter}</td>
+        </tr>
+      `,
+    )
+    .join('');
+}
+
+function renderKey(elements: UIElements, key: Uint8Array): void {
+  elements.keyDisplay.textContent = bytesToHex(key);
+}
+
+function renderTagDisplays(elements: UIElements, tag: Uint8Array | null): void {
+  const activeTag = tag ?? ZERO_TAG;
+  elements.tagDisplay.innerHTML = renderTagCells(activeTag);
+  elements.tagHexDisplay.textContent = bytesToHex(activeTag);
+  elements.tamperedTagDisplay.innerHTML = tag ? renderTagCells(tamperTag(tag), 8) : renderTagCells(ZERO_TAG);
+}
+
+function updateTamperedMessagePreview(elements: UIElements): void {
+  elements.tamperedMessageDisplay.textContent = tamperMessage(elements.messageInput.value);
+}
+
+function resetReuseSection(elements: UIElements): void {
+  elements.reuseTagOne.textContent = bytesToHex(ZERO_TAG);
+  elements.reuseTagTwo.textContent = bytesToHex(ZERO_TAG);
+  elements.reuseWarningBanner.hidden = true;
+}
+
+function clearComputedOutputs(elements: UIElements, state: AppState): void {
+  state.macResult = null;
+  renderTagDisplays(elements, null);
+  setVerificationEnabled(elements, false);
+  setStatus(elements.verifyOriginalStatus, 'Awaiting MAC', 'pending');
+  setStatus(elements.verifyMessageStatus, 'Awaiting MAC', 'pending');
+  setStatus(elements.verifyTagStatus, 'Awaiting MAC', 'pending');
+  updateTamperedMessagePreview(elements);
+  resetMathPanel(elements, state.key);
+}
+
+async function copyText(button: HTMLButtonElement, text: string): Promise<void> {
+  const originalLabel = button.textContent ?? 'Copy';
+
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch {
+    button.textContent = 'Copy Failed';
+  }
+
+  window.setTimeout(() => {
+    button.textContent = originalLabel;
+  }, 1200);
+}
+
+function activateTab(elements: UIElements, activeTab: TabKey): void {
+  for (const button of elements.tabButtons) {
+    const isActive = button.dataset.tab === activeTab;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-selected', String(isActive));
+  }
+
+  for (const panel of elements.tabPanels) {
+    const isActive = panel.dataset.panel === activeTab;
+    panel.classList.toggle('is-active', isActive);
+    panel.hidden = !isActive;
+  }
+}
+
+function wireTabs(elements: UIElements): void {
+  for (const button of elements.tabButtons) {
+    button.addEventListener('click', () => {
+      activateTab(elements, button.dataset.tab as TabKey);
+    });
+  }
+}
+
+function computeAndRenderMAC(elements: UIElements, state: AppState): void {
+  const result = computeMACResult(elements.messageInput.value, state.key);
+  state.macResult = result;
+  renderTagDisplays(elements, result.tag);
+  setVerificationEnabled(elements, true);
+  setStatus(elements.verifyOriginalStatus, 'Ready to verify', 'pending');
+  setStatus(elements.verifyMessageStatus, 'Ready to verify', 'pending');
+  setStatus(elements.verifyTagStatus, 'Ready to verify', 'pending');
+  updateTamperedMessagePreview(elements);
+}
+
+function wireInteractions(elements: UIElements, state: AppState): void {
+  elements.generateKeyButton.addEventListener('click', () => {
+    state.key = generateKey();
+    renderKey(elements, state.key);
+    clearComputedOutputs(elements, state);
+    resetReuseSection(elements);
+  });
+
+  elements.copyKeyButton.addEventListener('click', async () => {
+    await copyText(elements.copyKeyButton, bytesToHex(state.key));
+  });
+
+  elements.copyTagButton.addEventListener('click', async () => {
+    const text = state.macResult ? state.macResult.tagHex : bytesToHex(ZERO_TAG);
+    await copyText(elements.copyTagButton, text);
+  });
+
+  elements.messageInput.addEventListener('input', () => {
+    clearComputedOutputs(elements, state);
+  });
+
+  elements.computeMacButton.addEventListener('click', () => {
+    computeAndRenderMAC(elements, state);
+  });
+
+  elements.verifyOriginalButton.addEventListener('click', () => {
+    if (!state.macResult) {
+      return;
+    }
+
+    const isValid = verifyMAC(state.macResult.message, state.macResult.tag, state.key);
+    setStatus(elements.verifyOriginalStatus, isValid ? 'VALID' : 'INVALID', isValid ? 'valid' : 'invalid');
+  });
+
+  elements.verifyMessageButton.addEventListener('click', () => {
+    if (!state.macResult) {
+      return;
+    }
+
+    const tampered = tamperMessage(state.macResult.message);
+    const isValid = verifyMAC(tampered, state.macResult.tag, state.key);
+    setStatus(elements.verifyMessageStatus, isValid ? 'VALID' : 'INVALID', isValid ? 'valid' : 'invalid');
+  });
+
+  elements.verifyTagButton.addEventListener('click', () => {
+    if (!state.macResult) {
+      return;
+    }
+
+    const alteredTag = tamperTag(state.macResult.tag);
+    const isValid = verifyMAC(state.macResult.message, alteredTag, state.key);
+    renderTagDisplays(elements, state.macResult.tag);
+    setStatus(elements.verifyTagStatus, isValid ? 'VALID' : 'INVALID', isValid ? 'valid' : 'invalid');
+  });
+
+  elements.showMathButton.addEventListener('click', () => {
+    const steps = computeSteps(elements.messageInput.value, state.key);
+    renderMathRows(elements, steps, state.key);
+  });
+
+  elements.computeReuseButton.addEventListener('click', () => {
+    const messageOne = elements.reuseMessageOne.value;
+    const messageTwo = elements.reuseMessageTwo.value;
+    const tagOne = computeMACResult(messageOne, state.key).tagHex;
+    const tagTwo = computeMACResult(messageTwo, state.key).tagHex;
+
+    elements.reuseTagOne.textContent = tagOne;
+    elements.reuseTagTwo.textContent = tagTwo;
+    elements.reuseWarningBanner.hidden = false;
+  });
+
+  wireTabs(elements);
+  activateTab(elements, 'what');
+}
+
+export function mountApp(target: HTMLDivElement): void {
+  target.innerHTML = createTemplate();
+
+  const elements = collectElements(target);
+  const state: AppState = {
+    key: generateKey(),
+    macResult: null,
+  };
+
+  elements.messageInput.value = DEFAULT_MESSAGE;
+  elements.reuseMessageOne.value = DEFAULT_REUSE_MESSAGE_ONE;
+  elements.reuseMessageTwo.value = DEFAULT_REUSE_MESSAGE_TWO;
+
+  renderKey(elements, state.key);
+  clearComputedOutputs(elements, state);
+  resetReuseSection(elements);
+  wireInteractions(elements, state);
 }
