@@ -32,15 +32,13 @@ function littleEndianBytesToBigInt(bytes: Uint8Array): bigint {
 function getPaddedBlockBytes(messageBytes: Uint8Array, blockIndex: number): Uint8Array {
 	const start = blockIndex * BLOCK_SIZE;
 	const chunk = messageBytes.slice(start, start + BLOCK_SIZE);
-	const padded = new Uint8Array(BLOCK_SIZE);
-	padded.set(chunk);
-	return padded;
+	return chunk;
 }
 
-function getPoly1305BlockValue(blockBytes: Uint8Array): bigint {
-	const blockWithOne = new Uint8Array(BLOCK_SIZE + 1);
-	blockWithOne.set(blockBytes);
-	blockWithOne[BLOCK_SIZE] = 0x01;
+function getPoly1305BlockValue(chunk: Uint8Array): bigint {
+	const blockWithOne = new Uint8Array(chunk.length + 1);
+	blockWithOne.set(chunk);
+	blockWithOne[chunk.length] = 0x01;
 	return littleEndianBytesToBigInt(blockWithOne);
 }
 

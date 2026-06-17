@@ -51,13 +51,14 @@ interface UIElements {
   computeReuseButton: HTMLButtonElement;
   tabButtons: HTMLButtonElement[];
   tabPanels: HTMLElement[];
+  copyAnnouncer: HTMLDivElement;
 }
 
 function createTemplate(): string {
   return `
-    <main class="page-shell">
+    <main class="page-shell" id="main-content" tabindex="-1">
       <header class="hero-panel">
-        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode" style="position: absolute; top: 0; right: 0;">🌙</button>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode" title="Switch to light mode">🌙</button>
         <div class="hero-copy">
           <a class="portfolio-badge" href="https://systemslibrarian.github.io/crypto-lab/" target="_blank" rel="noreferrer">
             systemslibrarian.github.io/crypto-lab/ <span class="sr-only">(opens in new tab)</span>
@@ -119,7 +120,7 @@ function createTemplate(): string {
               </div>
               <button class="ghost-button" type="button" id="copy-tag-button" aria-label="Copy tag">Copy</button>
             </div>
-            <div class="tag-grid" id="tag-display"></div>
+            <div class="tag-grid" id="tag-display" aria-hidden="true"></div>
             <div class="mono-inline mono-hex" id="tag-hex-display"></div>
           </article>
         </div>
@@ -129,7 +130,7 @@ function createTemplate(): string {
             <h3>Scenario 1 — Verify Original</h3>
             <p class="scenario-copy">Run verification against the unchanged message and tag.</p>
             <button class="action-button" type="button" id="verify-original-button" disabled>Verify Original</button>
-            <p class="scenario-status" id="verify-original-status">Awaiting MAC</p>
+            <p class="scenario-status" id="verify-original-status" role="status" aria-live="polite" aria-atomic="true">Awaiting MAC</p>
           </article>
 
           <article class="scenario-card">
@@ -137,15 +138,15 @@ function createTemplate(): string {
             <p class="scenario-copy">Modified message shown below: original plus a single trailing space.</p>
             <div class="preview-block" id="tampered-message-display"></div>
             <button class="action-button" type="button" id="verify-message-button" disabled>Verify Tampered Message</button>
-            <p class="scenario-status" id="verify-message-status">Awaiting MAC</p>
+            <p class="scenario-status" id="verify-message-status" role="status" aria-live="polite" aria-atomic="true">Awaiting MAC</p>
           </article>
 
           <article class="scenario-card">
             <h3>Scenario 3 — Tamper Tag</h3>
             <p class="scenario-copy">The original message is preserved, but byte 8 of the tag is flipped.</p>
-            <div class="tag-grid tag-grid--compact" id="tampered-tag-display"></div>
+            <div class="tag-grid tag-grid--compact" id="tampered-tag-display" aria-hidden="true"></div>
             <button class="action-button" type="button" id="verify-tag-button" disabled>Verify Tampered Tag</button>
-            <p class="scenario-status" id="verify-tag-status">Awaiting MAC</p>
+            <p class="scenario-status" id="verify-tag-status" role="status" aria-live="polite" aria-atomic="true">Awaiting MAC</p>
           </article>
         </div>
       </section>
@@ -172,16 +173,21 @@ function createTemplate(): string {
           </article>
         </div>
 
-        <div class="table-shell">
+        <p class="table-hint">Scroll the table sideways to see every column.</p>
+        <div class="table-shell" tabindex="0" role="region" aria-label="Poly1305 accumulator steps, scroll horizontally to see all columns">
           <table class="math-table">
+            <caption class="sr-only">
+              First four Poly1305 blocks, showing each block value and the accumulator before and after the
+              (accumulator + block) × r mod p step.
+            </caption>
             <thead>
               <tr>
-                <th>Block #</th>
-                <th>Block (hex)</th>
-                <th>Block Value</th>
-                <th>Acc Before</th>
-                <th>× r mod p</th>
-                <th>Acc After</th>
+                <th scope="col">Block #</th>
+                <th scope="col">Block (hex)</th>
+                <th scope="col">Block Value</th>
+                <th scope="col">Acc Before</th>
+                <th scope="col">× r mod p</th>
+                <th scope="col">Acc After</th>
               </tr>
             </thead>
             <tbody id="math-steps-body"></tbody>
@@ -247,7 +253,7 @@ function createTemplate(): string {
         </div>
 
         <div class="info-panels">
-          <article class="info-panel is-active" id="panel-what" data-panel="what" role="tabpanel" aria-labelledby="tab-what">
+          <div class="info-panel is-active" id="panel-what" data-panel="what" role="tabpanel" aria-labelledby="tab-what" tabindex="0">
             <p>
               Poly1305 is a one-time MAC. Reusing its 32-byte key destroys the security model, so the same key must never
               authenticate two different messages. When used correctly, its 128-bit tag gives an attacker about a 2^-128
@@ -262,9 +268,9 @@ function createTemplate(): string {
               makes the construction safe in normal protocol use. Standalone Poly1305 is only appropriate when one-time
               key usage can be guaranteed externally.
             </p>
-          </article>
+          </div>
 
-          <article class="info-panel" id="panel-math" data-panel="math" role="tabpanel" aria-labelledby="tab-math" hidden>
+          <div class="info-panel" id="panel-math" data-panel="math" role="tabpanel" aria-labelledby="tab-math" tabindex="0" hidden>
             <p>
               The message is split into 16-byte blocks. Each block is interpreted as a little-endian integer after a
               single 0x01 byte is appended, and the accumulator evolves as accumulator = (accumulator + block) * r mod p.
@@ -278,9 +284,9 @@ function createTemplate(): string {
               p = 2^130 - 5 is chosen because it supports efficient reduction while remaining large enough for the padded
               16-byte blocks Poly1305 consumes.
             </p>
-          </article>
+          </div>
 
-          <article class="info-panel" id="panel-constant-time" data-panel="constant-time" role="tabpanel" aria-labelledby="tab-constant-time" hidden>
+          <div class="info-panel" id="panel-constant-time" data-panel="constant-time" role="tabpanel" aria-labelledby="tab-constant-time" tabindex="0" hidden>
             <p>
               Safe verification recomputes the expected tag and compares every byte, even when the first byte already
               differs. Returning early leaks how much of the candidate tag was correct, and that timing signal can help
@@ -290,9 +296,11 @@ function createTemplate(): string {
               This demo uses a constant-time XOR accumulation: diff starts at zero, every byte contributes with XOR, and
               verification succeeds only if diff is still zero after all 16 bytes have been processed.
             </p>
-          </article>
+          </div>
         </div>
       </section>
+
+      <div class="sr-only" id="copy-announcer" role="status" aria-live="polite"></div>
     </main>
   `;
 }
@@ -337,6 +345,7 @@ function collectElements(root: HTMLDivElement): UIElements {
     computeReuseButton: requireElement(root, '#compute-reuse-button'),
     tabButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tab]')),
     tabPanels: Array.from(root.querySelectorAll<HTMLElement>('[data-panel]')),
+    copyAnnouncer: requireElement(root, '#copy-announcer'),
   };
 }
 
@@ -377,7 +386,11 @@ function shortenHex(hex: string): string {
 }
 
 function setStatus(element: HTMLParagraphElement, text: string, tone: StatusTone): void {
-  element.textContent = text;
+  // Avoid re-writing identical text so the aria-live region does not re-announce
+  // unchanged states (e.g. "Awaiting MAC" on every keystroke).
+  if (element.textContent !== text) {
+    element.textContent = text;
+  }
   element.className = `scenario-status scenario-status--${tone}`;
 }
 
@@ -467,15 +480,25 @@ function clearComputedOutputs(elements: UIElements, state: AppState): void {
   resetMathPanel(elements, state.key);
 }
 
-async function copyText(button: HTMLButtonElement, text: string): Promise<void> {
+async function copyText(
+  button: HTMLButtonElement,
+  text: string,
+  announcer: HTMLDivElement,
+  label: string,
+): Promise<void> {
   const originalLabel = button.textContent ?? 'Copy';
+  let message: string;
 
   try {
     await navigator.clipboard.writeText(text);
     button.textContent = 'Copied';
+    message = `${label} copied to clipboard.`;
   } catch {
     button.textContent = 'Copy Failed';
+    message = `Could not copy ${label.toLowerCase()} to clipboard.`;
   }
+
+  announcer.textContent = message;
 
   window.setTimeout(() => {
     button.textContent = originalLabel;
@@ -546,12 +569,12 @@ function wireInteractions(elements: UIElements, state: AppState): void {
   });
 
   elements.copyKeyButton.addEventListener('click', async () => {
-    await copyText(elements.copyKeyButton, bytesToHex(state.key));
+    await copyText(elements.copyKeyButton, bytesToHex(state.key), elements.copyAnnouncer, 'Key');
   });
 
   elements.copyTagButton.addEventListener('click', async () => {
     const text = state.macResult ? state.macResult.tagHex : bytesToHex(ZERO_TAG);
-    await copyText(elements.copyTagButton, text);
+    await copyText(elements.copyTagButton, text, elements.copyAnnouncer, 'Tag');
   });
 
   elements.messageInput.addEventListener('input', () => {

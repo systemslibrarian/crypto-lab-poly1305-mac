@@ -34,6 +34,17 @@ Generate a random 32-byte key, type any message, and compute its Poly1305 authen
 - **NaCl / libsodium `crypto_secretbox`** — The widely deployed `secretbox` construction pairs XSalsa20 encryption with Poly1305 authentication, used in applications from Signal to Keybase.
 - **IETF RFC 8439** — The canonical specification for ChaCha20-Poly1305, referenced by QUIC (RFC 9001), Noise Protocol Framework, and other modern protocols.
 
+## Running Locally
+
+```bash
+npm install
+npm run dev      # start the Vite dev server
+npm test         # run the Vitest suite
+npm run build    # type-check (tsc) and produce the production bundle in dist/
+```
+
+The test suite verifies correctness against the canonical **RFC 8439 §2.5.2** Poly1305 test vector (key, message, clamped `r`, and tag), checks that tampering with either the message or the tag fails verification, and runs an automated [axe-core](https://github.com/dequelabs/axe-core) accessibility audit over the rendered UI. Color contrast for both themes meets WCAG 2.1 AA (≥ 4.5:1 for text).
+
 ---
 
 "So whether you eat or drink or whatever you do, do it all for the glory of God." — 1 Corinthians 10:31

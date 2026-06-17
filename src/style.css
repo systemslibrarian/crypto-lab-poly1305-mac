@@ -5,7 +5,7 @@
   --line: rgba(33, 26, 43, 0.12);
   --panel: rgba(255, 252, 248, 0.84);
   --panel-strong: rgba(255, 255, 255, 0.92);
-  --accent: #0b7fab;
+  --accent: #097090;
   --accent-2: #c43b3b;
   --accent-3: #edb444;
   --accent-4: #136f63;
@@ -352,7 +352,7 @@ button:disabled {
 .ghost-button:focus-visible,
 .tab-button:focus-visible,
 .message-input:focus-visible {
-  outline: 2px solid var(--accent-3);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
@@ -456,19 +456,20 @@ button:disabled {
   place-items: center;
   min-height: 54px;
   border-radius: 16px;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--tag-color) 72%, white), color-mix(in oklab, var(--tag-color) 82%, black 12%));
+  background: linear-gradient(180deg, color-mix(in oklab, var(--tag-color) 40%, white), color-mix(in oklab, var(--tag-color) 56%, white 16%));
   color: #08141d;
   font-weight: 700;
- 
+  letter-spacing: 0.08em;
+}
 
 [data-theme="dark"] .tag-cell {
-  color: #f0edf5;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--tag-color) 50%, black 20%), color-mix(in oklab, var(--tag-color) 40%, black 40%));
-} letter-spacing: 0.08em;
+  color: #f3f0f8;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--tag-color) 46%, black 26%), color-mix(in oklab, var(--tag-color) 38%, black 46%));
 }
 
 .tag-cell--tampered {
-  border: 3px solid var(--accent-2);
+  outline: 3px solid var(--accent-2);
+  outline-offset: -3px;
 }
 
 .scenario-grid {
@@ -500,6 +501,19 @@ button:disabled {
   margin-top: 18px;
   border: 1px solid var(--line);
   border-radius: 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-shell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.table-hint {
+  display: none;
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
 }
 
 .math-table {
@@ -598,8 +612,9 @@ button:disabled {
 
 .theme-toggle {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
   width: 2.75rem;
   height: 2.75rem;
   border: 1px solid var(--line);
@@ -618,7 +633,7 @@ button:disabled {
 }
 
 .theme-toggle:focus-visible {
-  outline: 2px solid var(--accent-3);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
@@ -650,13 +665,68 @@ button:disabled {
     padding: 22px;
   }
 
+  /* Keep hero text clear of the absolutely-positioned theme toggle. */
+  .hero-copy {
+    padding-right: 3.25rem;
+  }
+
   .section-heading-row,
   .panel-header,
   .warning-banner {
     flex-direction: column;
   }
 
+  .section-heading-row .action-button,
+  .panel-header .action-button {
+    width: 100%;
+  }
+
   .tag-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .table-hint {
+    display: block;
+  }
+}
+
+@media (max-width: 420px) {
+  .portfolio-badge {
+    font-size: 0.74rem;
+    overflow-wrap: anywhere;
+  }
+
+  .tag-grid {
+    gap: 6px;
+  }
+
+  .tag-cell {
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+  }
+}
+
+/* Respect users who ask for reduced motion (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .math-row {
+    opacity: 1;
+    transform: none;
+  }
+
+  .action-button:hover,
+  .ghost-button:hover,
+  .tab-button:hover,
+  .theme-toggle:hover {
+    transform: none;
   }
 }
