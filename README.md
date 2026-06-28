@@ -10,11 +10,11 @@ Poly1305 is a one-time message authentication code (MAC) designed by Daniel J. B
 - **High-throughput MAC in AEAD constructions** — Poly1305's arithmetic is simple enough for constant-time implementations on commodity hardware, making it a common choice inside TLS 1.3 and WireGuard.
 - **Replacing HMAC when polynomial MAC performance matters** — On platforms without AES-NI, Poly1305 can be faster than HMAC-SHA-256 while offering a strong forgery bound.
 - **When you need a MAC with a provable security bound** — Poly1305's forgery probability is at most the number of message blocks divided by the field size, a concrete bound absent from many hash-based MACs.
-- **Do NOT use standalone Poly1305 when you cannot guarantee one-time key usage** — reusing a key across two messages lets an attacker recover the secret r value and forge tags for any future message.
+- **Do NOT use standalone Poly1305 when you cannot guarantee one-time key usage** — reusing a key across two messages lets an attacker recover the secret r value and forge tags for any future message. This is a teaching demo, not a production MAC implementation.
 
 ## Live Demo
 
-[**https://systemslibrarian.github.io/crypto-lab-poly1305-mac/**](https://systemslibrarian.github.io/crypto-lab-poly1305-mac/)
+**[systemslibrarian.github.io/crypto-lab-poly1305-mac](https://systemslibrarian.github.io/crypto-lab-poly1305-mac/)**
 
 Generate a random 32-byte key, type any message, and compute its Poly1305 authentication tag. Three verification scenarios let you confirm the original tag, tamper the message (a trailing space), or flip a single tag byte — all with constant-time comparison. The Polynomial Stepper section visualises the first four blocks as `(accumulator + block) × r mod p`, and the Key Reuse Warning computes two MACs under the same key to demonstrate why reuse is fatal.
 
@@ -34,17 +34,28 @@ Generate a random 32-byte key, type any message, and compute its Poly1305 authen
 - **NaCl / libsodium `crypto_secretbox`** — The widely deployed `secretbox` construction pairs XSalsa20 encryption with Poly1305 authentication, used in applications from Signal to Keybase.
 - **IETF RFC 8439** — The canonical specification for ChaCha20-Poly1305, referenced by QUIC (RFC 9001), Noise Protocol Framework, and other modern protocols.
 
-## Running Locally
+## How to Run Locally
 
 ```bash
+git clone https://github.com/systemslibrarian/crypto-lab-poly1305-mac
+cd crypto-lab-poly1305-mac
 npm install
-npm run dev      # start the Vite dev server
-npm test         # run the Vitest suite
-npm run build    # type-check (tsc) and produce the production bundle in dist/
+npm run dev
 ```
+
+## Related Demos
+- [crypto-lab-mac-race](https://systemslibrarian.github.io/crypto-lab-mac-race/) — head-to-head comparison of HMAC, CMAC, Poly1305, and GHASH.
+- [crypto-lab-chacha20-stream](https://systemslibrarian.github.io/crypto-lab-chacha20-stream/) — the ChaCha20 keystream that pairs with Poly1305 in the AEAD construction.
+- [crypto-lab-aes-modes](https://systemslibrarian.github.io/crypto-lab-aes-modes/) — AES-GCM and other authenticated-encryption modes for comparison.
+- [crypto-lab-nonce-guard](https://systemslibrarian.github.io/crypto-lab-nonce-guard/) — what nonce reuse does to AEAD constructions, the failure mode behind ChaCha20-Poly1305 misuse.
+- [crypto-lab-babel-hash](https://systemslibrarian.github.io/crypto-lab-babel-hash/) — SHA-256, BLAKE3, and HMAC, the hash-based MAC alternative to polynomial MACs.
+
+## Tests
 
 The test suite verifies correctness against the canonical **RFC 8439 §2.5.2** Poly1305 test vector (key, message, clamped `r`, and tag), checks that tampering with either the message or the tag fails verification, and runs an automated [axe-core](https://github.com/dequelabs/axe-core) accessibility audit over the rendered UI. Color contrast for both themes meets WCAG 2.1 AA (≥ 4.5:1 for text).
 
 ---
 
-"So whether you eat or drink or whatever you do, do it all for the glory of God." — 1 Corinthians 10:31
+*One of 60+ browser demos in the [Crypto Lab](https://crypto-lab.systemslibrarian.dev/) suite.*
+
+*"So whether you eat or drink or whatever you do, do it all for the glory of God." — 1 Corinthians 10:31*
