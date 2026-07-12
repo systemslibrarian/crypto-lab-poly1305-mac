@@ -57,32 +57,24 @@ interface UIElements {
 function createTemplate(): string {
   return `
     <main class="page-shell" id="main-content" tabindex="-1">
-      <header class="hero-panel">
-        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode" title="Switch to light mode">🌙</button>
-        <div class="hero-copy">
-          <a class="portfolio-badge" href="https://systemslibrarian.github.io/crypto-lab/" target="_blank" rel="noreferrer">
-            systemslibrarian.github.io/crypto-lab/ <span class="sr-only">(opens in new tab)</span>
-          </a>
-          <p class="eyebrow">Crypto Lab Portfolio</p>
-          <h1>Poly1305 MAC</h1>
-          <p class="hero-text">
-            Explore how a one-time message authentication code works, why reusing a key breaks its security,
-            and how Poly1305 turns message blocks into a polynomial over a finite field.
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light mode" title="Switch to light mode">🌙</button>
+      <header class="cl-hero">
+        <div class="cl-hero-main">
+          <h1 class="cl-hero-title">Poly1305</h1>
+          <p class="cl-hero-sub">One-Time MAC · GF(2^130-5)</p>
+          <p class="cl-hero-desc">
+            Compute and verify a Poly1305 tag, watch the message evaluate as a polynomial over the field GF(2^130-5),
+            and see how reusing one key across two messages leaks it.
           </p>
-          <details class="why-details">
-            <summary>Why this matters</summary>
-            <p>
-              Authentication tags are often the only barrier between a legitimate message and a forged one.
-              Poly1305 is extremely strong when used correctly, but it fails hard under key reuse. This demo is
-              built to make that boundary visible.
-            </p>
-          </details>
         </div>
-        <div class="hero-metric-card">
-          <p class="hero-metric-label">Verified Import</p>
-          <p class="hero-metric-value">@noble/ciphers/_poly1305.js</p>
-          <p class="hero-metric-note">Sub-import confirmed from package exports after npm show @noble/ciphers verification.</p>
-        </div>
+        <aside class="cl-hero-why" aria-label="Why it matters">
+          <span class="cl-hero-why-label">WHY IT MATTERS</span>
+          <p class="cl-hero-why-text">
+            An authentication tag is often the only thing standing between a genuine message and a forged one.
+            Poly1305 is provably strong per key, but it is a one-time MAC: reuse the key and an attacker can solve
+            for it and forge at will.
+          </p>
+        </aside>
       </header>
 
       <section class="lab-section" aria-labelledby="playground-heading">
