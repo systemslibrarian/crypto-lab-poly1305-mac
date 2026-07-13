@@ -16,7 +16,9 @@ Poly1305 is a one-time message authentication code (MAC) designed by Daniel J. B
 
 **[systemslibrarian.github.io/crypto-lab-poly1305-mac](https://systemslibrarian.github.io/crypto-lab-poly1305-mac/)**
 
-Generate a random 32-byte key, type any message, and compute its Poly1305 authentication tag. Three verification scenarios let you confirm the original tag, tamper the message (a trailing space), or flip a single tag byte — all with constant-time comparison. The Polynomial Stepper section visualises the first four blocks as `(accumulator + block) × r mod p`, and the Key Reuse Warning computes two MACs under the same key to demonstrate why reuse is fatal.
+Generate a random 32-byte key, type any message, and compute its Poly1305 authentication tag. Three verification scenarios let you confirm the original tag, tamper the message (a trailing space), or flip a single tag byte — all with constant-time comparison; each tag byte is drawn as a colored square whose hue encodes its value (0x00 blue → 0xFF red). The Polynomial Stepper visualises the first four blocks with the full recurrence broken into stages — `Acc + Block`, then `× r`, then `mod p → Acc After` — annotates the first block's 0x01 padding and little-endian reading, and includes a "What is clamping?" popover that highlights exactly which key bits are zeroed. The **Forge a Tag by Reusing One Key** section makes the one-time rule concrete: it signs two short (single-block) messages under one key, then — playing the attacker who never sees the key — recovers the secret `r` and `s` from the two tags by algebra and produces a **valid forged tag** for a third message you choose, verified live against the same key.
+
+The forgery is real, not staged: the recovery solves `(c₁ − c₂)·r ≡ (t₁ − t₂) + Δ·2¹²⁸ (mod p)` over the few possible wrap terms `Δ`, keeps the candidate satisfying Poly1305's clamp mask, and checks it against both known tags. A unit test asserts the recovered `r` matches the RFC 8439 key and that the forged tag verifies under real `@noble/ciphers` Poly1305 across many random keys.
 
 ## What Can Go Wrong
 
@@ -52,7 +54,7 @@ npm run dev
 
 ## Tests
 
-The test suite verifies correctness against the canonical **RFC 8439 §2.5.2** Poly1305 test vector (key, message, clamped `r`, and tag), checks that tampering with either the message or the tag fails verification, and runs an automated [axe-core](https://github.com/dequelabs/axe-core) accessibility audit over the rendered UI. Color contrast for both themes meets WCAG 2.1 AA (≥ 4.5:1 for text).
+The test suite verifies correctness against the canonical **RFC 8439 §2.5.2** Poly1305 test vector (key, message, clamped `r`, and tag), checks that tampering with either the message or the tag fails verification, and proves the **key-reuse forgery** honestly — recovering the real `r`/`s` from two single-block tags and confirming the forged tag verifies under genuine `@noble/ciphers` Poly1305 for the RFC key and 50 random keys. It also runs an automated [axe-core](https://github.com/dequelabs/axe-core) accessibility audit over the rendered UI. Color contrast for both themes meets WCAG 2.1 AA (≥ 4.5:1 for text).
 
 ---
 

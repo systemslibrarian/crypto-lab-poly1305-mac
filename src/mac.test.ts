@@ -8,7 +8,13 @@ import {
 	tamperTag,
 	verifyMAC,
 } from './mac.ts';
-import { clampR } from './poly-math.ts';
+import {
+	clampR,
+	forgeTag,
+	recoverKeyFromTagPairs,
+	singleBlockInteger,
+	tagBytesToInteger,
+} from './poly-math.ts';
 
 function hexToBytes(hex: string): Uint8Array {
 	const clean = hex.replace(/\s+/g, '');
@@ -70,6 +76,60 @@ describe('key handling', () => {
 
 	it('rejects keys that are not 32 bytes', () => {
 		expect(() => computeMAC('x', new Uint8Array(16))).toThrow();
+	});
+});
+
+describe('key-reuse forgery from two single-block pairs', () => {
+	// The whole point of the "one-time" rule: two genuine (message, tag) pairs
+	// under ONE key let an attacker recover (r, s) and forge a valid tag for a
+	// message the sender never signed — verified live against the real key.
+	const MSG_A = 'Pay Alice $10';
+	const MSG_B = 'Pay Bob $20';
+	const FORGED = 'Pay Mallory $99';
+
+	function attack(key: Uint8Array) {
+		const tagA = computeMAC(MSG_A, key);
+		const tagB = computeMAC(MSG_B, key);
+		const recovered = recoverKeyFromTagPairs(
+			singleBlockInteger(MSG_A),
+			tagBytesToInteger(tagA),
+			singleBlockInteger(MSG_B),
+			tagBytesToInteger(tagB),
+		);
+		return recovered;
+	}
+
+	it('recovers the real r from the RFC test key', () => {
+		const recovered = attack(RFC_KEY);
+		expect(recovered).not.toBeNull();
+		expect(recovered!.r).toBe(RFC_CLAMPED_R);
+	});
+
+	it('forges a tag the genuine key accepts', () => {
+		const recovered = attack(RFC_KEY);
+		expect(recovered).not.toBeNull();
+		const forged = forgeTag(recovered!, FORGED);
+		// The forged tag must verify against the SAME key under real Poly1305.
+		expect(verifyMAC(FORGED, forged, RFC_KEY)).toBe(true);
+		expect(bytesToHex(forged)).toBe(bytesToHex(computeMAC(FORGED, RFC_KEY)));
+	});
+
+	it('works for many independent random keys', () => {
+		for (let trial = 0; trial < 50; trial += 1) {
+			const key = generateKey();
+			const recovered = attack(key);
+			expect(recovered).not.toBeNull();
+			const forged = forgeTag(recovered!, FORGED);
+			expect(verifyMAC(FORGED, forged, key)).toBe(true);
+		}
+	});
+
+	it('returns null when the two messages are identical (no independent equation)', () => {
+		const key = generateKey();
+		const tag = computeMAC(MSG_A, key);
+		const c = singleBlockInteger(MSG_A);
+		const t = tagBytesToInteger(tag);
+		expect(recoverKeyFromTagPairs(c, t, c, t)).toBeNull();
 	});
 });
 

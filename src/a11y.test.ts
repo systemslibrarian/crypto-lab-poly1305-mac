@@ -44,8 +44,9 @@ describe('rendered app accessibility', () => {
 
 		expect(root.querySelectorAll('h1')).toHaveLength(1);
 		expect(root.querySelector('main')).not.toBeNull();
-		// Every verify status is a polite live region so results are announced.
+		// Every verify verdict is a polite live region so results are announced:
+		// the three tamper scenarios plus the key-reuse forgery verdict.
 		const statuses = root.querySelectorAll('.scenario-status[aria-live="polite"]');
-		expect(statuses).toHaveLength(3);
+		expect(statuses).toHaveLength(4);
 	});
 });

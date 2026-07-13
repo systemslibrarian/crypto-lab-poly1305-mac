@@ -574,6 +574,306 @@ button:disabled {
   display: none;
 }
 
+/* --- Tag legend (color = byte value) --- */
+.tag-legend {
+  margin: 14px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-legend strong {
+  color: var(--ink-strong);
+}
+
+.tag-legend-scale {
+  display: inline-block;
+  width: 120px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  /* 0x00 -> blue (220deg) ... 0xFF -> red (0deg), matching byteHue(). */
+  background: linear-gradient(
+    90deg,
+    hsl(220deg 74% 58%),
+    hsl(165deg 74% 58%),
+    hsl(110deg 74% 58%),
+    hsl(55deg 74% 58%),
+    hsl(0deg 74% 58%)
+  );
+}
+
+.tag-legend-ends {
+  display: inline-flex;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+/* Byte 8 recoloring as it flips in the tamper-tag scenario. */
+.tag-cell--flipping {
+  animation: tag-flip 620ms ease;
+}
+
+@keyframes tag-flip {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  35% {
+    transform: scale(1.12) rotate(-4deg);
+    filter: brightness(1.5) saturate(1.4);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* --- Stepper explanatory copy + annotation row --- */
+.stepper-intro,
+.stepper-recurrence {
+  margin: 16px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+
+.stepper-intro strong,
+.stepper-recurrence strong {
+  color: var(--ink-strong);
+}
+
+.stepper-intro code,
+.stepper-recurrence code,
+.math-annotation code,
+.reuse-intro code,
+.explanation-details code,
+.inline-glossary-copy code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--ink-strong);
+}
+
+.math-annotation-row td {
+  background: color-mix(in oklab, var(--accent) 7%, transparent);
+}
+
+.math-annotation {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.65;
+  font-size: 0.92rem;
+}
+
+.math-annotation strong {
+  color: var(--ink-strong);
+}
+
+/* Stagger-highlight the three recurrence stages so add -> multiply -> reduce
+   reads as a sequence, not three unrelated columns. */
+.math-cell--add,
+.math-cell--mul,
+.math-cell--acc {
+  border-radius: 8px;
+}
+
+.math-cell--add {
+  background: color-mix(in oklab, var(--accent-3) 22%, transparent);
+}
+
+.math-cell--mul {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+.math-cell--acc {
+  background: color-mix(in oklab, var(--accent-4) 20%, transparent);
+  font-weight: 700;
+}
+
+/* --- Clamping glossary popover --- */
+.inline-glossary {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+
+.inline-glossary summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.inline-glossary-copy {
+  margin: 12px 0 0;
+  color: var(--ink);
+  line-height: 1.6;
+  font-size: 0.92rem;
+}
+
+.clamp-compare {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.clamp-compare:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.clamp-line {
+  display: grid;
+  gap: 6px;
+}
+
+.clamp-line-label {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  letter-spacing: 0.03em;
+}
+
+.clamp-bytes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-family: var(--mono);
+}
+
+.clamp-byte {
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: var(--mono-block-bg);
+  color: var(--mono-block-fg);
+  font-size: 0.82rem;
+}
+
+.clamp-byte--masked {
+  /* Dark ink on the amber accent — high contrast in both themes; marks the
+     nibbles clamping forces to zero. Bold + label keep it non-color-reliant. */
+  background: var(--accent-3);
+  color: #1d1824;
+  font-weight: 700;
+}
+
+.clamp-byte--changed {
+  outline: 2px solid var(--accent-4);
+  outline-offset: -2px;
+}
+
+/* --- Key-reuse forgery lane --- */
+.reuse-intro {
+  margin: 16px 0 0;
+  color: var(--ink);
+  line-height: 1.7;
+  max-width: 78ch;
+}
+
+.reuse-intro strong {
+  color: var(--ink-strong);
+}
+
+.attack-lane {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.attack-step-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.attack-step-num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  /* Darken the accent so white text clears AA in both themes (dark theme's
+     --accent is a bright cyan that fails against white on its own). */
+  background: color-mix(in oklab, var(--accent) 62%, black);
+  color: #fff9f2;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.reuse-length-note {
+  margin: 12px 0 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.reuse-length-note--over {
+  color: var(--warning-fg);
+  font-weight: 600;
+}
+
+.attack-solve {
+  padding: 18px 20px;
+  border: 1px dashed color-mix(in oklab, var(--accent-2) 55%, var(--line));
+  border-radius: 20px;
+  background: color-mix(in oklab, var(--accent-2) 6%, var(--panel-strong));
+}
+
+.attack-solve:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.attack-solve-empty {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.attack-solve-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.attack-solve-key {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--accent-2) 66%, black);
+  color: #fff9f2;
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.attack-solve-val {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.attack-solve-caption {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
 .info-tabs {
   display: flex;
   gap: 12px;
@@ -736,6 +1036,10 @@ button:disabled {
   .math-row {
     opacity: 1;
     transform: none;
+  }
+
+  .tag-cell--flipping {
+    animation: none;
   }
 
   .action-button:hover,

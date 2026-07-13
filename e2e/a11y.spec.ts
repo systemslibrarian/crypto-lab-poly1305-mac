@@ -54,8 +54,13 @@ async function driveDemos(page: Page): Promise<void> {
   await page.locator('#show-math-button').click();
   await expect(page.locator('#math-steps-body .math-row').first()).toBeVisible();
 
-  // Section C — key reuse (injects both tags + reveals the warning banner).
+  // Section C — key-reuse forgery. Sign both messages, then forge a tag for a
+  // new message; this injects the recovered r/s panel, the forged tag grid, the
+  // forge verdict, and reveals the "key broken" banner.
   await page.locator('#compute-reuse-button').click();
+  await expect(page.locator('#forge-button')).toBeEnabled();
+  await page.locator('#forge-button').click();
+  await expect(page.locator('#forge-status')).toHaveText(/VALID/);
   await expect(page.locator('#reuse-warning-banner')).toBeVisible();
 }
 

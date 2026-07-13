@@ -7,19 +7,44 @@ import {
   verifyMAC,
   type MACResult,
 } from './mac.ts';
-import { clampR, computeSteps, type PolyStep } from './poly-math.ts';
+import {
+  clampR,
+  computeSteps,
+  forgeTag,
+  recoverKeyFromTagPairs,
+  singleBlockInteger,
+  tagBytesToInteger,
+  utf8ByteLength,
+  SINGLE_BLOCK_MAX_BYTES,
+  type PolyStep,
+  type RecoveredKey,
+} from './poly-math.ts';
 
 const DEFAULT_MESSAGE = 'Authenticate this message.';
-const DEFAULT_REUSE_MESSAGE_ONE = 'Transfer $100';
-const DEFAULT_REUSE_MESSAGE_TWO = 'Transfer $999';
+// Key-reuse forgery uses single-block (<=16-byte) messages so two (message,
+// tag) pairs uniquely determine (r, s). Defaults are chosen to fit one block.
+const DEFAULT_REUSE_MESSAGE_ONE = 'Pay Alice $10';
+const DEFAULT_REUSE_MESSAGE_TWO = 'Pay Bob $20';
+const DEFAULT_FORGE_MESSAGE = 'Pay Mallory $99';
 const ZERO_TAG = new Uint8Array(16);
 
 type StatusTone = 'pending' | 'valid' | 'invalid';
 type TabKey = 'what' | 'math' | 'constant-time';
 
+interface ReusePair {
+  message: string;
+  blockInteger: bigint;
+  tagInteger: bigint;
+}
+
 interface AppState {
   key: Uint8Array;
   macResult: MACResult | null;
+  // The two genuine single-block pairs the sender signed under one key, and the
+  // key (r, s) an attacker recovers from them. Populated by "Sign Both Messages".
+  reusePairOne: ReusePair | null;
+  reusePairTwo: ReusePair | null;
+  recoveredKey: RecoveredKey | null;
 }
 
 interface UIElements {
@@ -37,12 +62,21 @@ interface UIElements {
   verifyTagStatus: HTMLParagraphElement;
   rHexDisplay: HTMLDivElement;
   rDecimalDisplay: HTMLParagraphElement;
+  clampCompare: HTMLDivElement;
   mathStepsBody: HTMLTableSectionElement;
   reuseMessageOne: HTMLTextAreaElement;
   reuseMessageTwo: HTMLTextAreaElement;
   reuseTagOne: HTMLDivElement;
   reuseTagTwo: HTMLDivElement;
   reuseWarningBanner: HTMLDivElement;
+  forgeMessageInput: HTMLTextAreaElement;
+  forgeButton: HTMLButtonElement;
+  forgeStep: HTMLParagraphElement;
+  forgeRecovered: HTMLDivElement;
+  forgeTagDisplay: HTMLDivElement;
+  forgeTagHex: HTMLDivElement;
+  forgeStatus: HTMLParagraphElement;
+  reuseLengthNote: HTMLParagraphElement;
   generateKeyButton: HTMLButtonElement;
   copyKeyButton: HTMLButtonElement;
   computeMacButton: HTMLButtonElement;
@@ -113,6 +147,12 @@ function createTemplate(): string {
               <button class="ghost-button" type="button" id="copy-tag-button" aria-label="Copy tag">Copy</button>
             </div>
             <div class="tag-grid" id="tag-display" aria-hidden="true"></div>
+            <p class="tag-legend">
+              Each square is one of the 16 tag bytes. <strong>Color = byte value:</strong>
+              <span class="tag-legend-scale" aria-hidden="true"></span>
+              <span class="tag-legend-ends"><span>0x00</span><span>0xFF</span></span>
+              Hover a square for its exact value.
+            </p>
             <div class="mono-inline mono-hex" id="tag-hex-display"></div>
           </article>
         </div>
@@ -152,25 +192,55 @@ function createTemplate(): string {
           <button class="action-button" type="button" id="show-math-button">Show Math</button>
         </div>
 
+        <p class="stepper-intro">
+          Poly1305 does its arithmetic in a <strong>finite field</strong> — a number system with a fixed set of
+          values where add and multiply always “wrap around” a chosen prime, here <code>p = 2¹³⁰ − 5</code> (written
+          <strong>GF(2¹³⁰−5)</strong>). Working in this field is what gives the tag its provable forgery bound. Two
+          values come from the key: <strong>r</strong>, the fixed multiplier used every step, and <strong>s</strong>,
+          added once at the very end.
+        </p>
+
         <div class="math-summary-grid">
           <article class="panel-card">
-            <h3>Clamped r</h3>
+            <div class="panel-header">
+              <h3>Clamped r</h3>
+            </div>
             <div class="mono-block mono-hex" id="r-hex-display"></div>
             <p class="math-decimal" id="r-decimal-display"></p>
+            <details class="inline-glossary">
+              <summary>What is clamping?</summary>
+              <p class="inline-glossary-copy">
+                Before use, 22 specific bits of the key's first 16 bytes are forced to <code>0</code>. This
+                <strong>clamping</strong> keeps <code>r</code> in a range that makes the field multiplication fast and
+                blocks classes of polynomial forgery. Highlighted nibbles below are the bits clamping zeroes:
+              </p>
+              <div class="clamp-compare" id="clamp-compare" role="region" aria-label="Key bytes before and after clamping" tabindex="0"></div>
+            </details>
           </article>
           <article class="panel-card">
-            <h3>Prime Field</h3>
+            <div class="panel-header">
+              <h3>Prime Field</h3>
+            </div>
             <div class="mono-block">p = 2^130 - 5</div>
             <p class="math-decimal">1361129467683753853853498429727072845819</p>
+            <p class="panel-copy">The field size. Every add and multiply in the stepper is taken mod this prime.</p>
           </article>
         </div>
+
+        <p class="stepper-recurrence">
+          Each block updates a running accumulator with the same recurrence:
+          <code>acc ← ((acc + block) × r) mod p</code>. The table breaks that into its three stages so you can
+          follow how <strong>Acc After</strong> is built — the block is <em>added</em> first (this is what makes the
+          message blocks the coefficients of a polynomial in <code>r</code>), then multiplied by the fixed
+          <code>r</code>, then reduced mod <code>p</code>.
+        </p>
 
         <p class="table-hint">Scroll the table sideways to see every column.</p>
         <div class="table-shell" tabindex="0" role="region" aria-label="Poly1305 accumulator steps, scroll horizontally to see all columns">
           <table class="math-table">
             <caption class="sr-only">
-              First four Poly1305 blocks, showing each block value and the accumulator before and after the
-              (accumulator + block) × r mod p step.
+              First four Poly1305 blocks. Each row shows the block value, then the three stages of the recurrence:
+              accumulator plus block, that sum times the fixed r, and the result reduced mod p to give the next accumulator.
             </caption>
             <thead>
               <tr>
@@ -178,8 +248,9 @@ function createTemplate(): string {
                 <th scope="col">Block (hex)</th>
                 <th scope="col">Block Value</th>
                 <th scope="col">Acc Before</th>
-                <th scope="col">× r mod p</th>
-                <th scope="col">Acc After</th>
+                <th scope="col">Acc + Block</th>
+                <th scope="col">(Acc + Block) × r</th>
+                <th scope="col">mod p → Acc After</th>
               </tr>
             </thead>
             <tbody id="math-steps-body"></tbody>
@@ -187,6 +258,7 @@ function createTemplate(): string {
         </div>
 
         <p class="section-footnote">
+          <strong>r</strong> is the fixed multiplier derived from the first half of the key (shown above as “Clamped r”); it is the same in every row.
           Showing first 4 blocks only for clarity. Real Poly1305 processes all message blocks sequentially.
         </p>
       </section>
@@ -195,37 +267,79 @@ function createTemplate(): string {
         <div class="section-heading-row">
           <div>
             <p class="section-kicker">Section C</p>
-            <h2 id="reuse-heading">Key Reuse Warning</h2>
+            <h2 id="reuse-heading">Forge a Tag by Reusing One Key</h2>
           </div>
-          <button class="action-button action-button--danger" type="button" id="compute-reuse-button">Compute Both MACs (Same Key)</button>
+          <button class="action-button action-button--danger" type="button" id="compute-reuse-button">Step 1 · Sign Both Messages (Same Key)</button>
         </div>
 
-        <div class="reuse-grid">
-          <article class="panel-card">
-            <h3>Message 1</h3>
-            <textarea id="reuse-message-one" class="message-input" rows="3" aria-label="Key reuse message 1">${DEFAULT_REUSE_MESSAGE_ONE}</textarea>
-            <div class="mono-inline mono-hex" id="reuse-tag-one"></div>
-          </article>
+        <p class="reuse-intro">
+          Poly1305 is a <strong>one-time</strong> MAC: safe for exactly one message per key.
+          Below, the sender breaks that rule and signs <em>two</em> short messages with the same key.
+          You then play the attacker — who never sees the key — and forge a valid tag for a
+          <em>third</em> message the sender never signed. If the forgery verifies, the key is broken.
+        </p>
 
-          <article class="panel-card">
-            <h3>Message 2</h3>
-            <textarea id="reuse-message-two" class="message-input" rows="3" aria-label="Key reuse message 2">${DEFAULT_REUSE_MESSAGE_TWO}</textarea>
-            <div class="mono-inline mono-hex" id="reuse-tag-two"></div>
-          </article>
+        <div class="attack-lane">
+          <div class="attack-step">
+            <p class="attack-step-label"><span class="attack-step-num">1</span> Two genuine (message, tag) pairs under one key</p>
+            <div class="reuse-grid">
+              <article class="panel-card">
+                <h3>Message 1 (signed by sender)</h3>
+                <textarea id="reuse-message-one" class="message-input" rows="2" aria-label="Key reuse message 1">${DEFAULT_REUSE_MESSAGE_ONE}</textarea>
+                <div class="mono-inline mono-hex" id="reuse-tag-one"></div>
+              </article>
+              <article class="panel-card">
+                <h3>Message 2 (signed by sender)</h3>
+                <textarea id="reuse-message-two" class="message-input" rows="2" aria-label="Key reuse message 2">${DEFAULT_REUSE_MESSAGE_TWO}</textarea>
+                <div class="mono-inline mono-hex" id="reuse-tag-two"></div>
+              </article>
+            </div>
+            <p class="reuse-length-note" id="reuse-length-note"></p>
+          </div>
+
+          <div class="attack-step">
+            <p class="attack-step-label"><span class="attack-step-num">2</span> Attacker solves the two tag equations for the secret r and s</p>
+            <div class="attack-solve" id="forge-recovered" role="region" aria-label="Recovered secret key values" tabindex="0">
+              <p class="attack-solve-empty">Run step 1, type a forged message, then forge to reveal the recovered r and s here.</p>
+            </div>
+          </div>
+
+          <div class="attack-step">
+            <p class="attack-step-label"><span class="attack-step-num">3</span> Forge a tag for a message the sender never signed</p>
+            <article class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <h3>Forged message (you choose)</h3>
+                  <p class="panel-copy">Up to 16 bytes (one Poly1305 block).</p>
+                </div>
+                <button class="action-button action-button--danger" type="button" id="forge-button" disabled>Forge Tag</button>
+              </div>
+              <textarea id="forge-message-input" class="message-input" rows="2" aria-label="Message to forge a tag for">${DEFAULT_FORGE_MESSAGE}</textarea>
+              <p class="panel-copy" id="forge-step">Forged tag (computed from the stolen r and s):</p>
+              <div class="tag-grid tag-grid--compact" id="forge-tag-display" aria-hidden="true"></div>
+              <div class="mono-inline mono-hex" id="forge-tag-hex"></div>
+              <p class="scenario-status" id="forge-status" role="status" aria-live="polite" aria-atomic="true">Awaiting forgery</p>
+            </article>
+          </div>
         </div>
 
         <div class="warning-banner" id="reuse-warning-banner" role="alert" hidden>
-          <strong>⚠ Poly1305 keys must NEVER be reused.</strong>
-          <span>Two MACs under the same key can be combined to forge a third.</span>
+          <strong>⚠ Key broken.</strong>
+          <span>A message the sender never signed just verified as VALID under their key. That is why a Poly1305 key must authenticate only ONE message.</span>
         </div>
 
         <details class="explanation-details">
-          <summary>Why reuse breaks Poly1305</summary>
+          <summary>How the forgery works (the algebra)</summary>
           <p>
-            When an attacker sees two valid (message, tag) pairs under the same key, they can solve for the key's
-            r and s values algebraically. With r and s known, they can forge a valid tag for any message. In
-            ChaCha20-Poly1305, this is prevented automatically: the cipher generates a fresh Poly1305 key from each
-            unique nonce.
+            A single-block message has the tag equation <code>tag = ((c · r) mod p + s) mod 2¹²⁸</code>,
+            where <code>c</code> is the message's padded block integer (public) and <code>(r, s)</code> is the
+            secret key. Two pairs under the same key give two equations. Subtracting them cancels <code>s</code>,
+            leaving <code>(c₁ − c₂)·r ≡ (t₁ − t₂) + Δ·2¹²⁸ (mod p)</code> with only a tiny integer wrap term
+            <code>Δ</code> unknown. Trying the few possible <code>Δ</code> values, keeping the candidate whose bits
+            satisfy Poly1305's clamp mask, and checking it against both known tags recovers the real <code>r</code>
+            (and then <code>s</code>) — no brute force. With <code>(r, s)</code> in hand, any new message is trivially
+            forgeable. In ChaCha20-Poly1305 this never happens: a fresh Poly1305 key is derived per nonce, so no two
+            messages ever share one.
           </p>
         </details>
       </section>
@@ -328,12 +442,21 @@ function collectElements(root: HTMLDivElement): UIElements {
     verifyTagStatus: requireElement(root, '#verify-tag-status'),
     rHexDisplay: requireElement(root, '#r-hex-display'),
     rDecimalDisplay: requireElement(root, '#r-decimal-display'),
+    clampCompare: requireElement(root, '#clamp-compare'),
     mathStepsBody: requireElement(root, '#math-steps-body'),
     reuseMessageOne: requireElement(root, '#reuse-message-one'),
     reuseMessageTwo: requireElement(root, '#reuse-message-two'),
     reuseTagOne: requireElement(root, '#reuse-tag-one'),
     reuseTagTwo: requireElement(root, '#reuse-tag-two'),
     reuseWarningBanner: requireElement(root, '#reuse-warning-banner'),
+    forgeMessageInput: requireElement(root, '#forge-message-input'),
+    forgeButton: requireElement(root, '#forge-button'),
+    forgeStep: requireElement(root, '#forge-step'),
+    forgeRecovered: requireElement(root, '#forge-recovered'),
+    forgeTagDisplay: requireElement(root, '#forge-tag-display'),
+    forgeTagHex: requireElement(root, '#forge-tag-hex'),
+    forgeStatus: requireElement(root, '#forge-status'),
+    reuseLengthNote: requireElement(root, '#reuse-length-note'),
     generateKeyButton: requireElement(root, '#generate-key-button'),
     copyKeyButton: requireElement(root, '#copy-key-button'),
     computeMacButton: requireElement(root, '#compute-mac-button'),
@@ -346,18 +469,31 @@ function collectElements(root: HTMLDivElement): UIElements {
   };
 }
 
-function renderTagCells(bytes: Uint8Array, tamperedIndex?: number): string {
+// Map a byte 0x00..0xFF to a hue: 0x00 -> blue (220deg), 0xFF -> red (0deg).
+// The color is a readable fingerprint of the byte's value, not decoration.
+function byteHue(byte: number): number {
+  return 220 - Math.round((byte / 255) * 220);
+}
+
+function renderTagCells(bytes: Uint8Array, tamperedIndex?: number, animateFlip = false): string {
   return Array.from({ length: 16 }, (_, index) => {
     const byte = bytes[index] ?? 0;
-    const hue = 220 - Math.round((byte / 255) * 220);
-    const modifier = tamperedIndex === index ? ' tag-cell--tampered' : '';
+    const hue = byteHue(byte);
+    const hex = byte.toString(16).padStart(2, '0').toUpperCase();
+    const isTampered = tamperedIndex === index;
+    const modifier =
+      (isTampered ? ' tag-cell--tampered' : '') + (isTampered && animateFlip ? ' tag-cell--flipping' : '');
+    // title = hover tooltip; aria-label carries the value + tamper note so the
+    // meaning survives for screen readers (color is never the only channel).
+    const label = `Byte ${index + 1} of 16: 0x${hex}${isTampered ? ', flipped by the tamper' : ''}`;
 
     return `
       <span
         class="tag-cell${modifier}"
         style="--tag-color: hsl(${hue}deg 74% 58%);"
-        aria-label="Tag byte ${index + 1}"
-      >${byte.toString(16).padStart(2, '0').toUpperCase()}</span>
+        title="Byte ${index + 1}: 0x${hex} — cell color encodes this value (0x00 blue → 0xFF red)"
+        aria-label="${label}"
+      >${hex}</span>
     `;
   }).join('');
 }
@@ -374,12 +510,31 @@ function clampRBytes(key: Uint8Array): Uint8Array {
   return clamped;
 }
 
-function shortenHex(hex: string): string {
-  if (hex.length <= 18) {
-    return hex;
-  }
+// Indices whose HIGH nibble (top 4 bits) is zeroed by clamping, and those whose
+// low 2 bits are zeroed. Used to highlight exactly which bits clamping touches.
+const CLAMP_HIGH_NIBBLE = new Set([3, 7, 11, 15]);
+const CLAMP_LOW_BITS = new Set([4, 8, 12]);
 
-  return `${hex.slice(0, 10)}...${hex.slice(-6)}`;
+// Render the first 16 key bytes before and after clamping, highlighting each
+// byte that changes. Purely illustrative — the real clampR drives the math.
+function renderClampCompare(elements: UIElements, key: Uint8Array): void {
+  const before = key.slice(0, 16);
+  const after = clampRBytes(key);
+  const cell = (label: string, bytes: Uint8Array, showMask: boolean): string => {
+    const cells = Array.from({ length: 16 }, (_, i) => {
+      const hex = bytes[i].toString(16).padStart(2, '0').toUpperCase();
+      const clampedHere = CLAMP_HIGH_NIBBLE.has(i) || CLAMP_LOW_BITS.has(i);
+      const changed = before[i] !== after[i];
+      const cls =
+        'clamp-byte' +
+        (showMask && clampedHere ? ' clamp-byte--masked' : '') +
+        (!showMask && changed ? ' clamp-byte--changed' : '');
+      return `<span class="${cls}">${hex}</span>`;
+    }).join('');
+    return `<div class="clamp-line"><span class="clamp-line-label">${label}</span><span class="clamp-bytes">${cells}</span></div>`;
+  };
+  elements.clampCompare.innerHTML =
+    cell('Key bytes 0–15 (before)', before, true) + cell('Clamped r (after)', after, false);
 }
 
 function setStatus(element: HTMLParagraphElement, text: string, tone: StatusTone): void {
@@ -400,7 +555,7 @@ function setVerificationEnabled(elements: UIElements, enabled: boolean): void {
 function renderPlaceholderMathRow(elements: UIElements): void {
   elements.mathStepsBody.innerHTML = `
     <tr>
-      <td colspan="6" class="math-empty">Compute a MAC, then click Show Math to inspect the first four Poly1305 blocks.</td>
+      <td colspan="7" class="math-empty">Compute a MAC, then click Show Math to inspect the first four Poly1305 blocks.</td>
     </tr>
   `;
 }
@@ -408,6 +563,7 @@ function renderPlaceholderMathRow(elements: UIElements): void {
 function resetMathPanel(elements: UIElements, key: Uint8Array): void {
   elements.rHexDisplay.textContent = bytesToHex(clampRBytes(key));
   elements.rDecimalDisplay.textContent = 'Run Show Math to compute the accumulator steps for the current message.';
+  renderClampCompare(elements, key);
   renderPlaceholderMathRow(elements);
 }
 
@@ -417,32 +573,51 @@ function renderMathRows(elements: UIElements, steps: PolyStep[], key: Uint8Array
 
   elements.rHexDisplay.textContent = clampedRHex;
   elements.rDecimalDisplay.textContent = clampedRDecimal;
+  renderClampCompare(elements, key);
 
   if (steps.length === 0) {
     elements.mathStepsBody.innerHTML = `
       <tr>
-        <td colspan="6" class="math-empty">This message has no bytes, so there are no Poly1305 blocks to visualize.</td>
+        <td colspan="7" class="math-empty">This message has no bytes, so there are no Poly1305 blocks to visualize.</td>
       </tr>
     `;
     return;
   }
 
-  const shortR = shortenHex(clampedRHex);
-
-  elements.mathStepsBody.innerHTML = steps
+  const rowsHtml = steps
     .map(
       (step, index) => `
-        <tr class="math-row" style="animation-delay: ${index * 100}ms;">
+        <tr class="math-row" style="animation-delay: ${index * 120}ms;">
           <td>${step.blockIndex + 1}</td>
           <td class="mono-cell mono-cell--hex">${step.blockHex}</td>
           <td class="mono-cell">${step.blockValue}</td>
           <td class="mono-cell">${step.accumulatorBefore}</td>
-          <td class="mono-cell mono-cell--hex">${shortR}</td>
-          <td class="mono-cell">${step.accumulatorAfter}</td>
+          <td class="mono-cell math-cell--add" style="animation-delay: ${index * 120 + 40}ms;">${step.sumBeforeMultiply}</td>
+          <td class="mono-cell math-cell--mul" style="animation-delay: ${index * 120 + 80}ms;">${step.productBeforeReduce}</td>
+          <td class="mono-cell math-cell--acc" style="animation-delay: ${index * 120 + 120}ms;">${step.accumulatorAfter}</td>
         </tr>
       `,
     )
     .join('');
+
+  // Annotate the very first row so the huge "Block Value" numbers stop looking
+  // arbitrary: they are the block's bytes with a 0x01 appended, read little-endian.
+  const firstBlockBytes = steps[0].blockHex.match(/.{1,2}/g)?.join(' ') ?? steps[0].blockHex;
+  const annotation = `
+    <tr class="math-annotation-row">
+      <td colspan="7">
+        <p class="math-annotation">
+          <strong>Reading block 1:</strong> take the block's bytes
+          <code>${firstBlockBytes}</code>, append a single <code>01</code> padding byte, and read the result
+          <em>little-endian</em> (least-significant byte first) as an integer — that is the
+          <strong>${steps[0].blockValue}</strong> in the Block Value column. The <code>01</code> marks where this
+          block ends so different-length messages can't collide.
+        </p>
+      </td>
+    </tr>
+  `;
+
+  elements.mathStepsBody.innerHTML = annotation + rowsHtml;
 }
 
 function renderKey(elements: UIElements, key: Uint8Array): void {
@@ -460,10 +635,48 @@ function updateTamperedMessagePreview(elements: UIElements): void {
   elements.tamperedMessageDisplay.textContent = tamperMessage(elements.messageInput.value);
 }
 
+function shortHex(hex: string): string {
+  return hex.length <= 24 ? hex : `${hex.slice(0, 14)}…${hex.slice(-8)}`;
+}
+
+// Live byte-length note so the learner sees why a message is (or isn't) a single
+// block. Returns true when the message fits one Poly1305 block (<= 16 bytes).
+function updateReuseLengthNote(elements: UIElements): boolean {
+  const lenOne = utf8ByteLength(elements.reuseMessageOne.value);
+  const lenTwo = utf8ByteLength(elements.reuseMessageTwo.value);
+  const lenForge = utf8ByteLength(elements.forgeMessageInput.value);
+  const allFit =
+    lenOne <= SINGLE_BLOCK_MAX_BYTES && lenTwo <= SINGLE_BLOCK_MAX_BYTES && lenForge <= SINGLE_BLOCK_MAX_BYTES;
+  const over: string[] = [];
+  if (lenOne > SINGLE_BLOCK_MAX_BYTES) over.push('Message 1');
+  if (lenTwo > SINGLE_BLOCK_MAX_BYTES) over.push('Message 2');
+  if (lenForge > SINGLE_BLOCK_MAX_BYTES) over.push('the forged message');
+
+  if (allFit) {
+    elements.reuseLengthNote.textContent = `Message 1: ${lenOne} B · Message 2: ${lenTwo} B · Forge: ${lenForge} B — all within one 16-byte block, so two pairs pin down (r, s) exactly.`;
+    elements.reuseLengthNote.classList.remove('reuse-length-note--over');
+  } else {
+    elements.reuseLengthNote.textContent = `${over.join(' and ')} exceed 16 bytes. This two-pair forgery is exact only for single-block messages; shorten to demonstrate it. (Longer messages need more pairs — the attack still exists, it just needs more captured tags.)`;
+    elements.reuseLengthNote.classList.add('reuse-length-note--over');
+  }
+  return allFit;
+}
+
+function renderForgeEmpty(elements: UIElements): void {
+  elements.forgeRecovered.innerHTML =
+    '<p class="attack-solve-empty">Run step 1, type a forged message, then forge to reveal the recovered r and s here.</p>';
+  elements.forgeTagDisplay.innerHTML = renderTagCells(ZERO_TAG);
+  elements.forgeTagHex.textContent = bytesToHex(ZERO_TAG);
+  setStatus(elements.forgeStatus, 'Awaiting forgery', 'pending');
+}
+
 function resetReuseSection(elements: UIElements): void {
   elements.reuseTagOne.textContent = bytesToHex(ZERO_TAG);
   elements.reuseTagTwo.textContent = bytesToHex(ZERO_TAG);
   elements.reuseWarningBanner.hidden = true;
+  elements.forgeButton.disabled = true;
+  renderForgeEmpty(elements);
+  updateReuseLengthNote(elements);
 }
 
 function clearComputedOutputs(elements: UIElements, state: AppState): void {
@@ -560,6 +773,9 @@ function computeAndRenderMAC(elements: UIElements, state: AppState): void {
 function wireInteractions(elements: UIElements, state: AppState): void {
   elements.generateKeyButton.addEventListener('click', () => {
     state.key = generateKey();
+    state.reusePairOne = null;
+    state.reusePairTwo = null;
+    state.recoveredKey = null;
     renderKey(elements, state.key);
     clearComputedOutputs(elements, state);
     resetReuseSection(elements);
@@ -608,7 +824,9 @@ function wireInteractions(elements: UIElements, state: AppState): void {
 
     const alteredTag = tamperTag(state.macResult.tag);
     const isValid = verifyMAC(state.macResult.message, alteredTag, state.key);
-    renderTagDisplays(elements, state.macResult.tag);
+    // Re-render the tampered tag with byte 8 animating its recolor as it flips,
+    // so the color channel (not just the outline) shows the change landing.
+    elements.tamperedTagDisplay.innerHTML = renderTagCells(alteredTag, 8, true);
     setStatus(elements.verifyTagStatus, isValid ? 'VALID' : 'INVALID', isValid ? 'valid' : 'invalid');
   });
 
@@ -617,15 +835,121 @@ function wireInteractions(elements: UIElements, state: AppState): void {
     renderMathRows(elements, steps, state.key);
   });
 
+  // Editing any reuse/forge message invalidates a prior forgery and refreshes
+  // the length note. The learner must re-run step 1 after changing the signed pair.
+  const onReuseInputChanged = () => {
+    state.reusePairOne = null;
+    state.reusePairTwo = null;
+    state.recoveredKey = null;
+    elements.forgeButton.disabled = true;
+    elements.reuseWarningBanner.hidden = true;
+    elements.reuseTagOne.textContent = bytesToHex(ZERO_TAG);
+    elements.reuseTagTwo.textContent = bytesToHex(ZERO_TAG);
+    renderForgeEmpty(elements);
+    updateReuseLengthNote(elements);
+  };
+  elements.reuseMessageOne.addEventListener('input', onReuseInputChanged);
+  elements.reuseMessageTwo.addEventListener('input', onReuseInputChanged);
+  elements.forgeMessageInput.addEventListener('input', () => {
+    // Changing only the forged message doesn't invalidate the recovered key.
+    elements.forgeButton.disabled = state.recoveredKey === null || !updateReuseLengthNote(elements);
+    if (state.recoveredKey) {
+      renderForgeEmpty(elements);
+      setStatus(elements.forgeStatus, 'Ready — click Forge Tag', 'pending');
+    } else {
+      updateReuseLengthNote(elements);
+    }
+  });
+
+  // STEP 1: the sender signs both messages under ONE key. Store the public
+  // (block integer, tag integer) pairs the attacker will work from.
   elements.computeReuseButton.addEventListener('click', () => {
     const messageOne = elements.reuseMessageOne.value;
     const messageTwo = elements.reuseMessageTwo.value;
-    const tagOne = computeMACResult(messageOne, state.key).tagHex;
-    const tagTwo = computeMACResult(messageTwo, state.key).tagHex;
+    const resultOne = computeMACResult(messageOne, state.key);
+    const resultTwo = computeMACResult(messageTwo, state.key);
 
-    elements.reuseTagOne.textContent = tagOne;
-    elements.reuseTagTwo.textContent = tagTwo;
-    elements.reuseWarningBanner.hidden = false;
+    elements.reuseTagOne.textContent = resultOne.tagHex;
+    elements.reuseTagTwo.textContent = resultTwo.tagHex;
+
+    const allSingleBlock = updateReuseLengthNote(elements);
+    state.reusePairOne = null;
+    state.reusePairTwo = null;
+    state.recoveredKey = null;
+    renderForgeEmpty(elements);
+    elements.reuseWarningBanner.hidden = true;
+
+    if (!allSingleBlock) {
+      elements.forgeButton.disabled = true;
+      return;
+    }
+
+    state.reusePairOne = {
+      message: messageOne,
+      blockInteger: singleBlockInteger(messageOne),
+      tagInteger: tagBytesToInteger(resultOne.tag),
+    };
+    state.reusePairTwo = {
+      message: messageTwo,
+      blockInteger: singleBlockInteger(messageTwo),
+      tagInteger: tagBytesToInteger(resultTwo.tag),
+    };
+    // Ready to forge once the learner has a forge message (also single-block).
+    elements.forgeButton.disabled = utf8ByteLength(elements.forgeMessageInput.value) > SINGLE_BLOCK_MAX_BYTES;
+    setStatus(elements.forgeStatus, 'Sender signed both. Now forge a third.', 'pending');
+  });
+
+  // STEP 2 + 3: attacker recovers (r, s) from the two pairs and forges a tag
+  // for a NEW message, then we verify that forged tag against the real key.
+  elements.forgeButton.addEventListener('click', () => {
+    if (!state.reusePairOne || !state.reusePairTwo) {
+      return;
+    }
+    const forgeMessage = elements.forgeMessageInput.value;
+    if (utf8ByteLength(forgeMessage) > SINGLE_BLOCK_MAX_BYTES) {
+      return;
+    }
+
+    const recovered = recoverKeyFromTagPairs(
+      state.reusePairOne.blockInteger,
+      state.reusePairOne.tagInteger,
+      state.reusePairTwo.blockInteger,
+      state.reusePairTwo.tagInteger,
+    );
+    state.recoveredKey = recovered;
+
+    if (!recovered) {
+      elements.forgeRecovered.innerHTML =
+        '<p class="attack-solve-empty">The two messages are identical, so they give the same equation — pick two different messages to recover the key.</p>';
+      renderForgeEmpty(elements);
+      setStatus(elements.forgeStatus, 'Need two different messages', 'invalid');
+      elements.reuseWarningBanner.hidden = true;
+      return;
+    }
+
+    // Show the stolen secrets (shortened) so the recovery is visible, not asserted.
+    const rHex = recovered.r.toString(16).toUpperCase().padStart(32, '0');
+    const sHex = recovered.s.toString(16).toUpperCase().padStart(32, '0');
+    elements.forgeRecovered.innerHTML = `
+      <p class="attack-solve-line"><span class="attack-solve-key">r</span> <span class="mono-inline mono-hex attack-solve-val">${shortHex(rHex)}</span></p>
+      <p class="attack-solve-line"><span class="attack-solve-key">s</span> <span class="mono-inline mono-hex attack-solve-val">${shortHex(sHex)}</span></p>
+      <p class="attack-solve-caption">Recovered from the two tags by algebra — the attacker never saw the key.</p>
+    `;
+
+    const forgedTag = forgeTag(recovered, forgeMessage);
+    // The moment of truth: does the REAL key accept this forged tag?
+    const accepted = verifyMAC(forgeMessage, forgedTag, state.key);
+    elements.forgeTagDisplay.innerHTML = renderTagCells(forgedTag);
+    elements.forgeTagHex.textContent = bytesToHex(forgedTag);
+
+    if (accepted) {
+      setStatus(elements.forgeStatus, 'VALID — forged tag accepted by the real key', 'valid');
+      elements.reuseWarningBanner.hidden = false;
+    } else {
+      // Should never happen for single-block inputs; fail honestly if it does.
+      setStatus(elements.forgeStatus, 'Forgery did not verify', 'invalid');
+      elements.reuseWarningBanner.hidden = true;
+    }
   });
 
   wireTabs(elements);
@@ -639,11 +963,15 @@ export function mountApp(target: HTMLDivElement): void {
   const state: AppState = {
     key: generateKey(),
     macResult: null,
+    reusePairOne: null,
+    reusePairTwo: null,
+    recoveredKey: null,
   };
 
   elements.messageInput.value = DEFAULT_MESSAGE;
   elements.reuseMessageOne.value = DEFAULT_REUSE_MESSAGE_ONE;
   elements.reuseMessageTwo.value = DEFAULT_REUSE_MESSAGE_TWO;
+  elements.forgeMessageInput.value = DEFAULT_FORGE_MESSAGE;
 
   renderKey(elements, state.key);
   clearComputedOutputs(elements, state);
