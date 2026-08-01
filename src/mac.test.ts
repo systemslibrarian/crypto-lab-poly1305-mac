@@ -11,6 +11,7 @@ import {
 import {
 	clampR,
 	forgeTag,
+	recoverKeyCandidates,
 	recoverKeyFromTagPairs,
 	singleBlockInteger,
 	tagBytesToInteger,
@@ -129,7 +130,90 @@ describe('key-reuse forgery from two single-block pairs', () => {
 		const tag = computeMAC(MSG_A, key);
 		const c = singleBlockInteger(MSG_A);
 		const t = tagBytesToInteger(tag);
+		expect(recoverKeyCandidates(c, t, c, t)).toHaveLength(0);
 		expect(recoverKeyFromTagPairs(c, t, c, t)).toBeNull();
+	});
+
+	function candidatesFor(key: Uint8Array, one: string, two: string) {
+		return recoverKeyCandidates(
+			singleBlockInteger(one),
+			tagBytesToInteger(computeMAC(one, key)),
+			singleBlockInteger(two),
+			tagBytesToInteger(computeMAC(two, key)),
+		);
+	}
+
+	it('never returns a key that is not a valid clamped r', () => {
+		// Candidates come back reduced mod 2^130-5, so they can be wider than the
+		// 16-byte key half. r + k*2^128 has the same low 16 bytes as the real r and
+		// used to pass a mask-only clamp test, yielding a wrong key and a forged tag
+		// the genuine key rejected. Every survivor must be a real clamped r.
+		for (const [one, two] of [
+			['A', 'B'],
+			['8', ':'],
+			['ab', 'ac'],
+			['hi', 'ho'],
+		]) {
+			for (let trial = 0; trial < 40; trial += 1) {
+				const key = generateKey();
+				for (const candidate of candidatesFor(key, one, two)) {
+					expect(candidate.r).toBeLessThan(2n ** 124n);
+					expect(candidate.s).toBeLessThan(2n ** 128n);
+				}
+			}
+		}
+	});
+
+	it('when it claims a unique key, that key is the real r', () => {
+		// The honesty property: a non-null recovery must never be a lucky alias.
+		// Includes message pairs one byte apart, which is where the alias appeared.
+		for (const [one, two] of [
+			[MSG_A, MSG_B],
+			['A', 'B'],
+			['ab', 'ac'],
+			['hi', 'ho'],
+			['abc', 'abd'],
+		]) {
+			for (let trial = 0; trial < 40; trial += 1) {
+				const key = generateKey();
+				const recovered = recoverKeyFromTagPairs(
+					singleBlockInteger(one),
+					tagBytesToInteger(computeMAC(one, key)),
+					singleBlockInteger(two),
+					tagBytesToInteger(computeMAC(two, key)),
+				);
+				if (recovered === null) continue; // ambiguous — reported honestly, not forged from
+				expect(recovered.r).toBe(clampR(key.subarray(0, 16)));
+				expect(verifyMAC(FORGED, forgeTag(recovered, FORGED), key)).toBe(true);
+			}
+		}
+	});
+
+	it('reports ambiguity instead of guessing when two pairs underdetermine the key', () => {
+		// "ab"/"ac" differ only in byte 1, so neighbouring wrap terms produce
+		// candidate r values a single step apart in r's top byte. Several of those
+		// are valid clamped keys reproducing both tags; none can be singled out.
+		let sawAmbiguous = false;
+		for (let trial = 0; trial < 60 && !sawAmbiguous; trial += 1) {
+			const key = generateKey();
+			const candidates = candidatesFor(key, 'ab', 'ac');
+			// Whatever the count, the sender's real key is always among them.
+			expect(candidates.map((c) => c.r)).toContain(clampR(key.subarray(0, 16)));
+			if (candidates.length > 1) {
+				sawAmbiguous = true;
+				expect(
+					recoverKeyFromTagPairs(
+						singleBlockInteger('ab'),
+						tagBytesToInteger(computeMAC('ab', key)),
+						singleBlockInteger('ac'),
+						tagBytesToInteger(computeMAC('ac', key)),
+					),
+				).toBeNull();
+			}
+		}
+		// ~98% of keys are ambiguous for this pair, so 60 trials missing it would
+		// itself be a signal that the candidate enumeration stopped working.
+		expect(sawAmbiguous).toBe(true);
 	});
 });
 

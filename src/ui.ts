@@ -11,7 +11,7 @@ import {
   clampR,
   computeSteps,
   forgeTag,
-  recoverKeyFromTagPairs,
+  recoverKeyCandidates,
   singleBlockInteger,
   tagBytesToInteger,
   utf8ByteLength,
@@ -175,7 +175,7 @@ function createTemplate(): string {
 
           <article class="scenario-card">
             <h3>Scenario 3 — Tamper Tag</h3>
-            <p class="scenario-copy">The original message is preserved, but byte 8 of the tag is flipped.</p>
+            <p class="scenario-copy">The original message is preserved, but the lowest bit of byte 9 (index 8) of the tag is flipped — a one-bit change.</p>
             <div class="tag-grid tag-grid--compact" id="tampered-tag-display" aria-hidden="true"></div>
             <button class="action-button" type="button" id="verify-tag-button" disabled>Verify Tampered Tag</button>
             <p class="scenario-status" id="verify-tag-status" role="status" aria-live="polite" aria-atomic="true">Awaiting MAC</p>
@@ -340,11 +340,18 @@ function createTemplate(): string {
             where <code>c</code> is the message's padded block integer (public) and <code>(r, s)</code> is the
             secret key. Two pairs under the same key give two equations. Subtracting them cancels <code>s</code>,
             leaving <code>(c₁ − c₂)·r ≡ (t₁ − t₂) + Δ·2¹²⁸ (mod p)</code> with only a tiny integer wrap term
-            <code>Δ</code> unknown. Trying the few possible <code>Δ</code> values, keeping the candidate whose bits
-            satisfy Poly1305's clamp mask, and checking it against both known tags recovers the real <code>r</code>
-            (and then <code>s</code>) — no brute force. With <code>(r, s)</code> in hand, any new message is trivially
-            forgeable. In ChaCha20-Poly1305 this never happens: a fresh Poly1305 key is derived per nonce, so no two
-            messages ever share one.
+            <code>Δ</code> unknown. Each of the nine possible <code>Δ</code> values gives one candidate
+            <code>r</code>; the ones that are not a valid clamped <code>r</code> (below 2¹²⁴ and matching the clamp
+            mask) or that fail to reproduce the second tag are thrown away. No brute force — just algebra.
+          </p>
+          <p>
+            Usually exactly one candidate survives and it is the sender's real <code>r</code>, after which any new
+            message is trivially forgeable. It is not guaranteed, though: candidates for neighbouring <code>Δ</code>
+            differ by <code>2¹²⁸·(c₁ − c₂)⁻¹ (mod p)</code>, so when the two messages are very close — one byte
+            apart, same length — that gap is small enough that several candidates look like valid clamped keys and
+            reproduce both tags. Then two pairs genuinely are not enough and this demo says so instead of forging
+            from a guess; a real attacker would capture a third tag. In ChaCha20-Poly1305 none of this arises: a
+            fresh Poly1305 key is derived per nonce, so no two messages ever share one.
           </p>
         </details>
       </section>
@@ -661,7 +668,7 @@ function updateReuseLengthNote(elements: UIElements): boolean {
   if (lenForge > SINGLE_BLOCK_MAX_BYTES) over.push('the forged message');
 
   if (allFit) {
-    elements.reuseLengthNote.textContent = `Message 1: ${lenOne} B · Message 2: ${lenTwo} B · Forge: ${lenForge} B — all within one 16-byte block, so two pairs pin down (r, s) exactly.`;
+    elements.reuseLengthNote.textContent = `Message 1: ${lenOne} B · Message 2: ${lenTwo} B · Forge: ${lenForge} B — all within one 16-byte block, so each tag is a single equation in (r, s).`;
     elements.reuseLengthNote.classList.remove('reuse-length-note--over');
   } else {
     elements.reuseLengthNote.textContent = `${over.join(' and ')} exceed 16 bytes. This two-pair forgery is exact only for single-block messages; shorten to demonstrate it. (Longer messages need more pairs — the attack still exists, it just needs more captured tags.)`;
@@ -832,7 +839,7 @@ function wireInteractions(elements: UIElements, state: AppState): void {
 
     const alteredTag = tamperTag(state.macResult.tag);
     const isValid = verifyMAC(state.macResult.message, alteredTag, state.key);
-    // Re-render the tampered tag with byte 8 animating its recolor as it flips,
+    // Re-render the tampered tag with byte index 8 animating its recolor as it flips,
     // so the color channel (not just the outline) shows the change landing.
     elements.tamperedTagDisplay.innerHTML = renderTagCells(alteredTag, 8, true);
     setStatus(elements.verifyTagStatus, isValid ? 'VALID' : 'INVALID', isValid ? 'valid' : 'invalid');
@@ -918,19 +925,31 @@ function wireInteractions(elements: UIElements, state: AppState): void {
       return;
     }
 
-    const recovered = recoverKeyFromTagPairs(
+    const candidates = recoverKeyCandidates(
       state.reusePairOne.blockInteger,
       state.reusePairOne.tagInteger,
       state.reusePairTwo.blockInteger,
       state.reusePairTwo.tagInteger,
     );
+    // Only a single surviving candidate is a recovered key. Several candidates
+    // all reproduce the two captured tags, so the attacker cannot tell which is
+    // the sender's — saying otherwise would be a forgery this demo can't back up.
+    const recovered = candidates.length === 1 ? candidates[0] : null;
     state.recoveredKey = recovered;
 
     if (!recovered) {
       elements.forgeRecovered.innerHTML =
-        '<p class="attack-solve-empty">The two messages are identical, so they give the same equation — pick two different messages to recover the key.</p>';
+        candidates.length === 0
+          ? '<p class="attack-solve-empty">The two messages are identical, so they give the same equation — pick two different messages to recover the key.</p>'
+          : `<p class="attack-solve-empty">Ambiguous: <strong>${candidates.length}</strong> different keys all reproduce these two tags, so the attacker cannot tell which one the sender used. Two pairs pin down (r, s) only when the messages are far enough apart; these differ by too little. Change a byte other than the last one, or change a message's length, and re-run step 1. (A real attacker would just capture a third tag.)</p>`;
       renderForgeEmpty(elements);
-      setStatus(elements.forgeStatus, 'Need two different messages', 'invalid');
+      setStatus(
+        elements.forgeStatus,
+        candidates.length === 0
+          ? 'Need two different messages'
+          : `Key not pinned down — ${candidates.length} candidates fit`,
+        'invalid',
+      );
       elements.reuseWarningBanner.hidden = true;
       return;
     }

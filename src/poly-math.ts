@@ -120,16 +120,30 @@ export function computeSteps(message: string, key: Uint8Array): PolyStep[] {
 //
 // The only unknown left besides r is a tiny integer wrap term Δ (the number of
 // 2^128 truncations that separated the two tags), which lies in a small range.
-// We try each Δ, solve for a candidate r modulo p, keep only candidates whose
-// low bytes satisfy Poly1305's clamp mask, recover the matching s, and verify
-// the candidate against BOTH known tags. The candidate that reproduces both is
-// the real (r, s) — no brute force over the key, just algebra an attacker can
-// do on paper. Once r and s are known, ANY new single-block message can be
-// tagged. This is the whole reason a Poly1305 key must never be reused.
+// We try each Δ, solve for a candidate r modulo p, keep only candidates that
+// look like a genuine clamped r, recover the matching s, and check the
+// candidate against BOTH known tags. No brute force over the key, just algebra
+// an attacker can do on paper. Once r and s are known, ANY new single-block
+// message can be tagged. This is the whole reason a Poly1305 key must never be
+// reused.
+//
+// TWO PAIRS DO NOT ALWAYS PIN r DOWN. Distinct Δ values differ by exactly
+// 2^128 on the right-hand side, so their candidate r values differ by
+// δ·2^128·(c₁ − c₂)^-1 (mod p). When the two messages are close enough that
+// (c₁ − c₂) is a small power of two times a small integer, that offset is
+// itself small — it perturbs only r's top byte — and several candidates then
+// satisfy the clamp mask AND reproduce both tags. ("ab"/"ac" leaves 2-7
+// consistent keys; "hi"/"ho" leaves 2-3 about 70% of the time.) All of them
+// explain the two observed tags; only one forges correctly for a third
+// message. So recovery enumerates every candidate and reports success only
+// when exactly one survives — the attacker needs another captured tag (or a
+// sender less predictable than "one byte apart") otherwise.
 // ---------------------------------------------------------------------------
 
 const CLAMP_HIGH_NIBBLE_INDICES = [3, 7, 11, 15];
 const CLAMP_LOW_BITS_INDICES = [4, 8, 12];
+// Clamping zeroes the top nibble of byte 15, so every genuine clamped r < 2^124.
+const MAX_CLAMPED_R_EXCLUSIVE = 2n ** 124n;
 
 export const SINGLE_BLOCK_MAX_BYTES = BLOCK_SIZE;
 
@@ -176,8 +190,21 @@ function modularInverse(value: bigint, modulus: bigint): bigint {
 	return ((oldS % modulus) + modulus) % modulus;
 }
 
-/** True iff r's little-endian bytes satisfy the Poly1305 clamp mask. */
+/**
+ * True iff r could be a genuine clamped Poly1305 r: it must fit in the 16-byte
+ * key half at all, and its bytes must satisfy the clamp mask.
+ *
+ * The width check is load-bearing. Candidate r values come back reduced mod
+ * p = 2^130 - 5, so they can carry bits above the 16-byte window; a candidate
+ * of the form r + k·2^128 has exactly the same low 16 bytes as the real r and
+ * would sail through a mask-only test. Clamping zeroes the top nibble of byte
+ * 15, so a real r is always below 2^124.
+ */
 function satisfiesClamp(r: bigint): boolean {
+	if (r < 0n || r >= MAX_CLAMPED_R_EXCLUSIVE) {
+		return false;
+	}
+
 	const bytes: number[] = [];
 	let value = r;
 	for (let index = 0; index < BLOCK_SIZE; index += 1) {
@@ -204,22 +231,28 @@ function bigIntToLittleEndian16(value: bigint): Uint8Array {
 }
 
 /**
- * Recover the secret (r, s) from two genuine single-block (message, tag) pairs
- * computed under the same key. Returns null if no candidate reproduces both
- * tags (e.g. the two messages are identical, giving no independent equation).
+ * Every (r, s) consistent with two genuine single-block (message, tag) pairs
+ * computed under the same key.
+ *
+ * Empty means no candidate reproduces both tags — in practice, the two
+ * messages were identical, so they give the same equation twice. More than one
+ * means the two messages were too close together to separate the wrap terms:
+ * each returned key explains both observed tags, but only one of them is the
+ * sender's, so forging from a guess is a coin flip rather than a certainty.
  */
-export function recoverKeyFromTagPairs(
+export function recoverKeyCandidates(
 	c1: bigint,
 	t1: bigint,
 	c2: bigint,
 	t2: bigint,
-): RecoveredKey | null {
+): RecoveredKey[] {
 	const cDiff = (((c1 - c2) % POLY1305_PRIME) + POLY1305_PRIME) % POLY1305_PRIME;
 	if (cDiff === 0n) {
-		return null;
+		return [];
 	}
 	const cDiffInverse = modularInverse(cDiff, POLY1305_PRIME);
 	const tDiff = t1 - t2;
+	const candidates: RecoveredKey[] = [];
 
 	for (let delta = -4n; delta <= 4n; delta += 1n) {
 		const rhs = (((tDiff + delta * TWO_POW_128) % POLY1305_PRIME) + POLY1305_PRIME) % POLY1305_PRIME;
@@ -227,15 +260,32 @@ export function recoverKeyFromTagPairs(
 		if (!satisfiesClamp(r)) {
 			continue;
 		}
+		// s is *defined* by the first equation, so check1 below can never fail —
+		// it is kept only as an assertion. The second tag is the real test.
 		const s = ((((t1 - ((c1 * r) % POLY1305_PRIME)) % TWO_POW_128) + TWO_POW_128) % TWO_POW_128);
 		const check1 = (((c1 * r) % POLY1305_PRIME) + s) % TWO_POW_128;
 		const check2 = (((c2 * r) % POLY1305_PRIME) + s) % TWO_POW_128;
-		if (check1 === t1 && check2 === t2) {
-			return { r, s };
+		if (check1 === t1 && check2 === t2 && !candidates.some((k) => k.r === r)) {
+			candidates.push({ r, s });
 		}
 	}
 
-	return null;
+	return candidates;
+}
+
+/**
+ * Recover the secret (r, s) from two genuine single-block (message, tag) pairs
+ * computed under the same key. Returns null unless the two pairs determine the
+ * key uniquely — see recoverKeyCandidates for why they sometimes do not.
+ */
+export function recoverKeyFromTagPairs(
+	c1: bigint,
+	t1: bigint,
+	c2: bigint,
+	t2: bigint,
+): RecoveredKey | null {
+	const candidates = recoverKeyCandidates(c1, t1, c2, t2);
+	return candidates.length === 1 ? candidates[0] : null;
 }
 
 /** Forge a tag for a new single-block message from recovered (r, s). */
