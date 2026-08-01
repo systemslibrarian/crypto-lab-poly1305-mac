@@ -3,6 +3,12 @@
   --ink: #30273f;
   --ink-soft: #655872;
   --line: rgba(33, 26, 43, 0.12);
+  /* Control boundaries only (message input, ghost buttons, tab buttons, theme
+     toggle). Those controls are filled with --panel-strong / --input-bg, which sit
+     at ~1.03-1.15:1 against the surface behind them, so the border is the sole
+     boundary and WCAG 2.1 SC 1.4.11 requires 3:1. The translucent --line resolves
+     to ~1.27:1 and stays as-is for decorative panel, card and table outlines. */
+  --line-strong: #8a7ea3;
   --panel: rgba(255, 252, 248, 0.84);
   --panel-strong: rgba(255, 255, 255, 0.92);
   --accent: #097090;
@@ -42,6 +48,7 @@
   --ink: #d5cfe0;
   --ink-soft: #9d92ab;
   --line: rgba(200, 190, 220, 0.14);
+  --line-strong: #8578a0;
   --panel: rgba(30, 26, 38, 0.88);
   --panel-strong: rgba(38, 33, 48, 0.94);
   --accent: #4dc3f7;
@@ -347,7 +354,7 @@ button:disabled {
 .ghost-button {
   background: var(--panel-strong);
   color: var(--ink-strong);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
 }
 
 .action-button:hover,
@@ -414,7 +421,7 @@ button:disabled {
   min-height: 118px;
   margin-top: 14px;
   padding: 16px 18px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 18px;
   resize: vertical;
   background: var(--input-bg);
@@ -893,7 +900,7 @@ button:disabled {
   padding: 12px 18px;
   background: var(--panel-strong);
   color: var(--ink-soft);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   font-weight: 700;
 }
 
@@ -925,7 +932,7 @@ button:disabled {
   z-index: 2;
   width: 2.75rem;
   height: 2.75rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
   background: var(--panel-strong);
   color: var(--ink-strong);
