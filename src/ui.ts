@@ -211,8 +211,13 @@ function createTemplate(): string {
               <summary>What is clamping?</summary>
               <p class="inline-glossary-copy">
                 Before use, 22 specific bits of the key's first 16 bytes are forced to <code>0</code>. This
-                <strong>clamping</strong> keeps <code>r</code> in a range that makes the field multiplication fast and
-                blocks classes of polynomial forgery. Highlighted nibbles below are the bits clamping zeroes:
+                <strong>clamping</strong> is a <em>performance</em> measure, not a hardening one: it keeps
+                <code>r</code> small enough that the field multiplication can run in fast fixed-width limbs without
+                carry overflow. Bernstein describes it as sacrificing a little security to simplify and accelerate
+                implementations &mdash; and that is the honest direction of the trade. Zeroing 22 bits shrinks
+                <code>r</code>'s space from 2<sup>128</sup> to 2<sup>106</sup>, which is exactly where the
+                2<sup>106</sup> in Poly1305's forgery bound comes from. Highlighted nibbles below are the bits
+                clamping zeroes:
               </p>
               <div class="clamp-compare" id="clamp-compare" role="region" aria-label="Key bytes before and after clamping" tabindex="0"></div>
             </details>
@@ -387,9 +392,11 @@ function createTemplate(): string {
               are processed, the final tag is (accumulator + s) mod 2^128.
             </p>
             <p>
-              Clamping r forces a restricted bit pattern that blocks classes of polynomial forgery attacks. The prime
-              p = 2^130 - 5 is chosen because it supports efficient reduction while remaining large enough for the padded
-              16-byte blocks Poly1305 consumes.
+              Clamping r zeroes 22 bits so that implementations can multiply in fast fixed-width limbs without carry
+              overflow. It buys speed, not security: r then ranges over 2^106 values instead of 2^128, and that is
+              precisely the 2^106 in the 8*ceil(L/16) / 2^106 forgery bound above. An implementation that skipped
+              clamping would not be safer, just incompatible. The prime p = 2^130 - 5 is chosen because it supports
+              efficient reduction while remaining large enough for the padded 16-byte blocks Poly1305 consumes.
             </p>
           </div>
 

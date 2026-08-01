@@ -24,7 +24,7 @@ The forgery is real, not staged: the recovery solves `(c₁ − c₂)·r ≡ (t�
 
 - **Key reuse** — Poly1305 is a one-time MAC. Authenticating two different messages under the same 32-byte key lets an attacker solve for the secret r and s values algebraically and forge tags for any message.
 - **Non-constant-time tag comparison** — Comparing tags with an early-exit `===` loop leaks how many leading bytes matched, giving an attacker a timing oracle to iteratively guess a valid tag.
-- **Unclamped r value** — The first 16 bytes of the key must have specific bits zeroed (clamping). Skipping this step permits classes of polynomial forgery that the clamping mask is designed to block.
+- **Unclamped r value** — The first 16 bytes of the key must have 22 specific bits zeroed (clamping) before use, and an implementation that skips it produces tags no conforming peer will accept. Note the direction of the tradeoff, which is easy to get backwards: clamping is a *performance* measure — it bounds `r` so the field multiplication can run in fast fixed-width limbs without carry overflow — and it *costs* security rather than adding it, shrinking `r`'s space from 2^128 to 2^106. That 2^106 is exactly the denominator in the 8·⌈L/16⌉ / 2^106 forgery bound.
 - **Using Poly1305 without an AEAD wrapper** — Standalone Poly1305 authenticates but does not encrypt. Sending a cleartext message with only a Poly1305 tag gives integrity without confidentiality, which is rarely the correct security goal.
 - **Nonce misuse in ChaCha20-Poly1305** — In the AEAD construction, repeating a nonce under the same encryption key re-derives the same Poly1305 sub-key, collapsing back to the key-reuse failure above.
 
