@@ -362,8 +362,9 @@ function createTemplate(): string {
           <div class="info-panel is-active" id="panel-what" data-panel="what" role="tabpanel" aria-labelledby="tab-what" tabindex="0">
             <p>
               Poly1305 is a one-time MAC. Reusing its 32-byte key destroys the security model, so the same key must never
-              authenticate two different messages. When used correctly, its 128-bit tag gives an attacker about a 2^-128
-              forgery chance per attempt.
+              authenticate two different messages. When used correctly, Bernstein's proof bounds the chance of a single
+              forgery at 8*ceil(L/16) / 2^106 for messages of at most L bytes — close to, but weaker than, the 2^-128 a
+              blind guess at a 128-bit tag would face.
             </p>
             <p>
               It was designed by Daniel J. Bernstein and evaluates a polynomial over GF(2^130-5). Verification must also

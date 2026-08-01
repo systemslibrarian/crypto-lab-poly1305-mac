@@ -2,14 +2,14 @@
 
 ## What It Is
 
-Poly1305 is a one-time message authentication code (MAC) designed by Daniel J. Bernstein. It takes a 32-byte key and a variable-length message and produces a 128-bit authentication tag by evaluating a polynomial over the prime field GF(2^130 − 5). The security model is information-theoretic: as long as each key is used only once, no amount of computation gives an attacker better than a 2^−128 chance of forging a valid tag. This demo uses the standalone `poly1305` export from `@noble/ciphers/_poly1305.js` to compute and verify tags entirely in the browser.
+Poly1305 is a one-time message authentication code (MAC) designed by Daniel J. Bernstein. It takes a 32-byte key and a variable-length message and produces a 128-bit authentication tag by evaluating a polynomial over the prime field GF(2^130 − 5). The security model is information-theoretic: as long as each key is used only once, no amount of computation gives an attacker better than an 8·⌈L/16⌉ / 2^106 chance of forging a valid tag on a message of at most L bytes (Bernstein's bound — note that it is weaker than the 2^−128 of a blind guess, and grows with message length). This demo uses the standalone `poly1305` export from `@noble/ciphers/_poly1305.js` to compute and verify tags entirely in the browser.
 
 ## When to Use It
 
 - **Authenticating a single message under a fresh key** — Poly1305's one-time guarantee makes it ideal when a higher-level protocol (such as ChaCha20-Poly1305) derives a unique key per message.
 - **High-throughput MAC in AEAD constructions** — Poly1305's arithmetic is simple enough for constant-time implementations on commodity hardware, making it a common choice inside TLS 1.3 and WireGuard.
 - **Replacing HMAC when polynomial MAC performance matters** — On platforms without AES-NI, Poly1305 can be faster than HMAC-SHA-256 while offering a strong forgery bound.
-- **When you need a MAC with a provable security bound** — Poly1305's forgery probability is at most the number of message blocks divided by the field size, a concrete bound absent from many hash-based MACs.
+- **When you need a MAC with a provable security bound** — Poly1305's forgery probability is at most 8·⌈L/16⌉ / 2^106, a concrete, message-length-dependent bound absent from many hash-based MACs.
 - **Do NOT use standalone Poly1305 when you cannot guarantee one-time key usage** — reusing a key across two messages lets an attacker recover the secret r value and forge tags for any future message. This is a teaching demo, not a production MAC implementation.
 
 ## Live Demo
