@@ -97,6 +97,14 @@ body {
   height: auto;
 }
 
+/* The dark theme's --accent (#4dc3f7) is a bright cyan; #fff on it is only
+   2.01:1, failing WCAG 1.4.3. Near-black text on the same fill is 9.28:1 and
+   keeps the accent as the skip-link's identity. Light --accent (#097090) is
+   dark enough that #fff already clears at 5.63:1. */
+[data-theme="dark"] .skip-link {
+  color: #08141d;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
