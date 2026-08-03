@@ -866,13 +866,24 @@ function wireInteractions(elements: UIElements, state: AppState): void {
   elements.reuseMessageOne.addEventListener('input', onReuseInputChanged);
   elements.reuseMessageTwo.addEventListener('input', onReuseInputChanged);
   elements.forgeMessageInput.addEventListener('input', () => {
-    // Changing only the forged message doesn't invalidate the recovered key.
-    elements.forgeButton.disabled = state.recoveredKey === null || !updateReuseLengthNote(elements);
-    if (state.recoveredKey) {
+    // Changing only the forged message doesn't invalidate the captured pairs, so
+    // Forge stays live off THOSE — not off state.recoveredKey, which is only
+    // populated after a forgery has already run and so used to disable the
+    // button for anyone who typed their own message before ever forging.
+    const fits = updateReuseLengthNote(elements);
+    const hasPairs = state.reusePairOne !== null && state.reusePairTwo !== null;
+    elements.forgeButton.disabled = !hasPairs || !fits;
+
+    if (hasPairs) {
+      // The previous forgery described a different message: clear it AND its
+      // "key broken" verdict rather than leaving them over the new message.
       renderForgeEmpty(elements);
-      setStatus(elements.forgeStatus, 'Ready — click Forge Tag', 'pending');
-    } else {
-      updateReuseLengthNote(elements);
+      elements.reuseWarningBanner.hidden = true;
+      setStatus(
+        elements.forgeStatus,
+        fits ? 'Ready — click Forge Tag' : 'Shorten the forged message to one 16-byte block',
+        'pending',
+      );
     }
   });
 
@@ -938,11 +949,14 @@ function wireInteractions(elements: UIElements, state: AppState): void {
     state.recoveredKey = recovered;
 
     if (!recovered) {
+      // Clear the tag/status FIRST: renderForgeEmpty also resets this panel to
+      // its generic placeholder, so writing the explanation before it would
+      // wipe the explanation out and leave the learner with no stated reason.
+      renderForgeEmpty(elements);
       elements.forgeRecovered.innerHTML =
         candidates.length === 0
           ? '<p class="attack-solve-empty">The two messages are identical, so they give the same equation — pick two different messages to recover the key.</p>'
           : `<p class="attack-solve-empty">Ambiguous: <strong>${candidates.length}</strong> different keys all reproduce these two tags, so the attacker cannot tell which one the sender used. Two pairs pin down (r, s) only when the messages are far enough apart; these differ by too little. Change a byte other than the last one, or change a message's length, and re-run step 1. (A real attacker would just capture a third tag.)</p>`;
-      renderForgeEmpty(elements);
       setStatus(
         elements.forgeStatus,
         candidates.length === 0
