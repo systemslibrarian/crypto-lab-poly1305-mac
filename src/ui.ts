@@ -423,9 +423,9 @@ function createTemplate(): string {
 
       <div class="sr-only" id="copy-announcer" role="status" aria-live="polite"></div>
     </main>
-<footer style="margin-top:3rem;padding:2rem 1rem;border-top:1px solid rgba(128,128,128,.25);text-align:center;font-size:.85rem;line-height:1.9;opacity:.85;font-family:ui-monospace,Menlo,Consolas,monospace">
-  <div><strong>Related demos:</strong> <a href="https://systemslibrarian.github.io/crypto-lab-mac-race/" style="color:#35d6bb">mac-race</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-chacha20-stream/" style="color:#35d6bb">chacha20-stream</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-aes-modes/" style="color:#35d6bb">aes-modes</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-nonce-guard/" style="color:#35d6bb">nonce-guard</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-babel-hash/" style="color:#35d6bb">babel-hash</a></div>
-  <div style="margin-top:.5rem"><a href="https://github.com/systemslibrarian/crypto-lab-poly1305-mac" style="color:#35d6bb">Source on GitHub</a> &middot; <a href="https://crypto-lab.systemslibrarian.dev/" style="color:#35d6bb">More crypto-lab demos</a></div>
+<footer style="margin-top:3rem;padding:2rem 1rem;border-top:1px solid rgba(128,128,128,.25);text-align:center;font-size:.85rem;line-height:1.9;font-family:ui-monospace,Menlo,Consolas,monospace">
+  <div><strong>Related demos:</strong> <a href="https://systemslibrarian.github.io/crypto-lab-mac-race/" class="footer-link">mac-race</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-chacha20-stream/" class="footer-link">chacha20-stream</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-aes-modes/" class="footer-link">aes-modes</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-nonce-guard/" class="footer-link">nonce-guard</a> &middot; <a href="https://systemslibrarian.github.io/crypto-lab-babel-hash/" class="footer-link">babel-hash</a></div>
+  <div style="margin-top:.5rem"><a href="https://github.com/systemslibrarian/crypto-lab-poly1305-mac" class="footer-link">Source on GitHub</a> &middot; <a href="https://crypto-lab.systemslibrarian.dev/" class="footer-link">More crypto-lab demos</a></div>
   <div style="margin-top:.75rem;opacity:.75">&ldquo;So whether you eat or drink or whatever you do, do it all for the glory of God.&rdquo; &mdash; 1 Corinthians 10:31</div>
 </footer>
   `;

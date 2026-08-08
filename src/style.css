@@ -12,6 +12,9 @@
   --panel: rgba(255, 252, 248, 0.84);
   --panel-strong: rgba(255, 255, 255, 0.92);
   --accent: #097090;
+  --link: #0a6270;
+  /* Text-only step of --accent: as the hero card's label it measured 3.69:1. */
+  --accent-ink: #075364;
   --accent-2: #c43b3b;
   --accent-3: #edb444;
   --accent-4: #136f63;
@@ -52,6 +55,8 @@
   --panel: rgba(30, 26, 38, 0.88);
   --panel-strong: rgba(38, 33, 48, 0.94);
   --accent: #4dc3f7;
+  --link: #6fd8ee;
+  --accent-ink: #4dc3f7;
   --accent-2: #f06868;
   --accent-3: #f0c95a;
   --accent-4: #3dd9c4;
@@ -319,6 +324,10 @@ button:disabled {
 .section-footnote,
 .math-decimal {
   margin: 8px 0 0;
+  /* A 130-bit accumulator printed in decimal is one unbreakable "word" —
+     digits carry no wrap opportunities — so it pushed the document 31px
+     sideways at 380px (WCAG 1.4.10). */
+  overflow-wrap: anywhere;
 }
 
 .action-button,
@@ -341,7 +350,14 @@ button:disabled {
 }
 
 .action-button {
-  background: linear-gradient(135deg, var(--accent), color-mix(in oklab, var(--accent) 60%, black));
+  /* The gradient's light stop was --accent itself, which carried the white
+     label at only 3.38:1. Darkening that stop keeps the same hue and ramp
+     while clearing AA. */
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--accent) 75%, black),
+    color-mix(in oklab, var(--accent) 45%, black)
+  );
   color: #fff9f2;
   box-shadow: 0 12px 24px rgba(11, 127, 171, 0.18);
 }
@@ -958,7 +974,13 @@ button:disabled {
   .scenario-grid,
   .reuse-grid,
   .math-summary-grid {
-    grid-template-columns: 1fr;
+    /* `minmax(0, 1fr)`, not a bare `1fr`: a bare fr track still has an
+       automatic minimum of min-content, so .math-table's `min-width: 920px`
+       sized the column and pushed the document to 434px at 380px — even though
+       the table sits in a `.table-shell` with `overflow-x: auto`. The desktop
+       rules above already use minmax(0, 1fr); this collapse dropped the floor
+       at exactly the width where it matters. */
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .panel-card--wide {
@@ -1028,10 +1050,12 @@ button:disabled {
 .cl-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:clamp(1rem,4vw,3rem);flex-wrap:wrap;margin:clamp(1rem,3vw,2rem) 0 1.5rem;}
 .cl-hero-main{flex:1 1 22rem;min-width:min(100%,20rem);}
 .cl-hero-title{margin:0;font-size:clamp(1.6rem,3.8vw,2.7rem);font-weight:700;line-height:1.1;letter-spacing:.01em;color:var(--ink-strong);}
-.cl-hero-sub{margin:.4rem 0 0;font-size:clamp(.9rem,1.6vw,1.05rem);letter-spacing:.01em;color:var(--ink-soft);opacity:.85;}
+/* No `opacity` here: --ink-soft is already the dimmed step, and fading it a
+   further 85% landed the subtitle at 3.47:1. */
+.cl-hero-sub{margin:.4rem 0 0;font-size:clamp(.9rem,1.6vw,1.05rem);letter-spacing:.01em;color:var(--ink-soft);}
 .cl-hero-desc{margin:.55rem 0 0;font-size:1rem;line-height:1.5;color:var(--ink-soft);max-width:60ch;}
 .cl-hero-why{flex:0 1 min(40%,26rem);min-width:min(100%,15rem);border:1px solid var(--line);border-radius:10px;padding:.85rem 1.05rem;background:color-mix(in oklab,var(--accent) 6%,transparent);}
-.cl-hero-why-label{display:block;font-size:.68rem;font-weight:700;letter-spacing:.14em;color:var(--accent);}
+.cl-hero-why-label{display:block;font-size:.68rem;font-weight:700;letter-spacing:.14em;color:var(--accent-ink);}
 .cl-hero-why-text{margin:.35rem 0 0;font-size:.95rem;line-height:1.5;color:var(--ink);}
 @media (max-width:640px){.cl-hero{flex-direction:column;}.cl-hero-why{flex-basis:auto;width:100%;}}
 
@@ -1067,4 +1091,15 @@ button:disabled {
   .theme-toggle:hover {
     transform: none;
   }
+}
+
+/* Footer links used a hardcoded inline `style="color:#35d6bb"`, which is
+   theme-blind AND immune to any stylesheet rule — inline styles win. On the
+   light theme's #f7efe9 page that teal measured 1.52:1. A themed token in a
+   real rule fixes both problems at once. Underlined because these sit in a run
+   of body copy, where colour alone is not a sufficient cue (WCAG 1.4.1). */
+.footer-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
