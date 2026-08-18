@@ -12,14 +12,14 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.62.1",
     "axe-core": "^4.12.1",
-    "jsdom": "^29.1.1",
-    "typescript": "~6.0.2",
-    "vite": "^8.0.4",
+    "jsdom": "^30.0.1",
+    "typescript": "~7.0.2",
+    "vite": "^8.2.0",
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@noble/ciphers": "^2.1.1"
+    "@noble/ciphers": "^2.2.0"
   }
 }
