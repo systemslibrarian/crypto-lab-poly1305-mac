@@ -8,7 +8,12 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:a11y": "playwright test"
+    "test:a11y": "playwright test e2e/a11y.spec.ts",
+    "test:e2e": "playwright test",
+    "test:workflow": "node --test scripts/workflow-controls.test.mjs",
+    "test:publisher": "node --test scripts/publisher-controls.test.mjs",
+    "test:mutations": "node scripts/claim-mutations.mjs",
+    "deploy": "gh workflow run pages.yml --repo systemslibrarian/crypto-lab-poly1305-mac --ref main"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
