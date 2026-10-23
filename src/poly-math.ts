@@ -288,6 +288,11 @@ export function recoverKeyFromTagPairs(
 	t2: bigint,
 ): RecoveredKey | null {
 	const candidates = recoverKeyCandidates(c1, t1, c2, t2);
+	return selectUniqueCandidate(candidates);
+}
+
+/** Refuse to guess when the captured pairs admit more than one valid key. */
+export function selectUniqueCandidate(candidates: RecoveredKey[]): RecoveredKey | null {
 	return candidates.length === 1 ? candidates[0] : null;
 }
 
