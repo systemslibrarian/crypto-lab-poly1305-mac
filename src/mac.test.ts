@@ -10,6 +10,7 @@ import {
 } from './mac.ts';
 import {
 	clampR,
+	computeSteps,
 	forgeTag,
 	recoverKeyCandidates,
 	recoverKeyFromTagPairs,
@@ -62,7 +63,11 @@ describe('verifyMAC rejects tampering', () => {
 	});
 
 	it('fails on a wrong-length tag', () => {
-		expect(verifyMAC(RFC_MESSAGE, new Uint8Array(15), RFC_KEY)).toBe(false);
+		const genuine = computeMAC(RFC_MESSAGE, RFC_KEY);
+		expect(verifyMAC(RFC_MESSAGE, genuine.slice(0, 15), RFC_KEY)).toBe(false);
+		const extended = new Uint8Array(17);
+		extended.set(genuine);
+		expect(verifyMAC(RFC_MESSAGE, extended, RFC_KEY)).toBe(false);
 	});
 });
 
@@ -76,7 +81,16 @@ describe('key handling', () => {
 	});
 
 	it('rejects keys that are not 32 bytes', () => {
-		expect(() => computeMAC('x', new Uint8Array(16))).toThrow();
+		const message = 'Poly1305 requires a 32-byte one-time key.';
+		expect(() => computeMAC('x', new Uint8Array(16))).toThrow(message);
+		expect(() => computeMAC('x', new Uint8Array(33))).toThrow(message);
+		expect(() => computeSteps('x', new Uint8Array(16))).toThrow();
+		expect(() => computeSteps('x', new Uint8Array(33))).toThrow();
+	});
+
+	it('rejects values that are not exactly one complete tag', () => {
+		expect(() => tagBytesToInteger(new Uint8Array(15))).toThrow();
+		expect(() => tagBytesToInteger(new Uint8Array(17))).toThrow();
 	});
 });
 

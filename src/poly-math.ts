@@ -65,7 +65,7 @@ export function clampR(r: Uint8Array): bigint {
 }
 
 export function computeSteps(message: string, key: Uint8Array): PolyStep[] {
-	if (key.length < 32) {
+	if (key.length !== 32) {
 		throw new Error('Poly1305 visualization requires a 32-byte key.');
 	}
 
@@ -164,7 +164,10 @@ export function utf8ByteLength(message: string): number {
 
 /** The integer value a 16-byte Poly1305 tag encodes (little-endian). */
 export function tagBytesToInteger(tag: Uint8Array): bigint {
-	return littleEndianBytesToBigInt(tag.slice(0, BLOCK_SIZE));
+	if (tag.length !== BLOCK_SIZE) {
+		throw new Error('A Poly1305 tag must be exactly 16 bytes.');
+	}
+	return littleEndianBytesToBigInt(tag);
 }
 
 /** Padded little-endian block integer for a message that fits in one block. */
