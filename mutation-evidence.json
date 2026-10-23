@@ -1,0 +1,102 @@
+[
+  {
+    "name": "MAC key validation no longer owns the exact 32-byte boundary",
+    "sourceDiff": "diff --git a/src/mac.ts b/src/mac.ts\nindex 83400c7..6c3407e 100644\n--- a/src/mac.ts\n+++ b/src/mac.ts\n@@ -11,7 +11,7 @@ export interface MACResult {\n }\n \n function assertKeyLength(key: Uint8Array): void {\n-\tif (key.length !== POLY1305_KEY_LENGTH) {\n+\tif (false && key.length !== POLY1305_KEY_LENGTH) {\n \t\tthrow new Error(`Poly1305 requires a ${POLY1305_KEY_LENGTH}-byte one-time key.`);\n \t}\n }\n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "dce829f42e120cb1bb7d8441bf3b273c47dbd5cdbcdf0669b2129c20fdfbb38c",
+    "namedTest": "rejects keys that are not 32 bytes",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "the polynomial stepper accepts an oversized key",
+    "sourceDiff": "diff --git a/src/poly-math.ts b/src/poly-math.ts\nindex dd8ca36..72f823a 100644\n--- a/src/poly-math.ts\n+++ b/src/poly-math.ts\n@@ -65,7 +65,7 @@ export function clampR(r: Uint8Array): bigint {\n }\n \n export function computeSteps(message: string, key: Uint8Array): PolyStep[] {\n-\tif (key.length !== 32) {\n+\tif (key.length < 32) {\n \t\tthrow new Error('Poly1305 visualization requires a 32-byte key.');\n \t}\n \n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "b1665532cef07446216c96b8a59f555c7498c5804a664cfbb0684d92561c197a",
+    "namedTest": "rejects keys that are not 32 bytes",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "tag decoding silently truncates or extends a captured tag",
+    "sourceDiff": "diff --git a/src/poly-math.ts b/src/poly-math.ts\nindex dd8ca36..3b32a55 100644\n--- a/src/poly-math.ts\n+++ b/src/poly-math.ts\n@@ -164,7 +164,7 @@ export function utf8ByteLength(message: string): number {\n \n /** The integer value a 16-byte Poly1305 tag encodes (little-endian). */\n export function tagBytesToInteger(tag: Uint8Array): bigint {\n-\tif (tag.length !== BLOCK_SIZE) {\n+\tif (false && tag.length !== BLOCK_SIZE) {\n \t\tthrow new Error('A Poly1305 tag must be exactly 16 bytes.');\n \t}\n \treturn littleEndianBytesToBigInt(tag);\n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "d2da016595c1d5c63122ce918fe748e6eed0b333a36df0d31a898107d914a1a5",
+    "namedTest": "rejects values that are not exactly one complete tag",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "verification accepts a genuine tag with trailing bytes",
+    "sourceDiff": "diff --git a/src/mac.ts b/src/mac.ts\nindex 83400c7..026ccb8 100644\n--- a/src/mac.ts\n+++ b/src/mac.ts\n@@ -51,7 +51,7 @@ export function computeMACResult(message: string, key: Uint8Array): MACResult {\n export function verifyMAC(message: string, tag: Uint8Array, key: Uint8Array): boolean {\n \tassertKeyLength(key);\n \n-\tif (tag.length !== POLY1305_TAG_LENGTH) {\n+\tif (false && tag.length !== POLY1305_TAG_LENGTH) {\n \t\treturn false;\n \t}\n \n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "cae831bfd12e6191029a5f3898c88bc6113d71f521216617b9c15670431050d9",
+    "namedTest": "fails on a wrong-length tag",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "verification compares only the first tag byte",
+    "sourceDiff": "diff --git a/src/mac.ts b/src/mac.ts\nindex 83400c7..2581325 100644\n--- a/src/mac.ts\n+++ b/src/mac.ts\n@@ -58,7 +58,7 @@ export function verifyMAC(message: string, tag: Uint8Array, key: Uint8Array): bo\n \tconst recomputedTag = computeMAC(message, key);\n \tlet diff = 0;\n \n-\tfor (let index = 0; index < POLY1305_TAG_LENGTH; index += 1) {\n+\tfor (let index = 0; index < 1; index += 1) {\n \t\tdiff |= recomputedTag[index] ^ tag[index];\n \t}\n \n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "baa6b35d14ef6e887504951e96da23e06c63f53ad057e20629917b054a1cc961",
+    "namedTest": "fails when one tag byte is flipped",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "single-block encoding omits the required 0x01 byte",
+    "sourceDiff": "diff --git a/src/poly-math.ts b/src/poly-math.ts\nindex dd8ca36..ae1eda7 100644\n--- a/src/poly-math.ts\n+++ b/src/poly-math.ts\n@@ -43,7 +43,7 @@ function getPaddedBlockBytes(messageBytes: Uint8Array, blockIndex: number): Uint\n function getPoly1305BlockValue(chunk: Uint8Array): bigint {\n \tconst blockWithOne = new Uint8Array(chunk.length + 1);\n \tblockWithOne.set(chunk);\n-\tblockWithOne[chunk.length] = 0x01;\n+\tblockWithOne[chunk.length] = 0x00;\n \treturn littleEndianBytesToBigInt(blockWithOne);\n }\n \n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "1c04058dca0575ddcecd2429c7b4b7adba775ae259304d0ccf4d0e9b9fbc42ee",
+    "namedTest": "forges a tag the genuine key accepts",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "clamping leaves the high nibble of byte 15 intact",
+    "sourceDiff": "diff --git a/src/poly-math.ts b/src/poly-math.ts\nindex dd8ca36..27575fe 100644\n--- a/src/poly-math.ts\n+++ b/src/poly-math.ts\n@@ -56,7 +56,7 @@ export function clampR(r: Uint8Array): bigint {\n \tclamped[3] &= 0x0f;\n \tclamped[7] &= 0x0f;\n \tclamped[11] &= 0x0f;\n-\tclamped[15] &= 0x0f;\n+\tclamped[15] &= 0xff;\n \tclamped[4] &= 0xfc;\n \tclamped[8] &= 0xfc;\n \tclamped[12] &= 0xfc;\n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "6f94c2fab75fcd0649d7cd4ae9d5cf871474cfbc623484f9ebf63c615f9cdfd1",
+    "namedTest": "clamps r to the documented value",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "clamping leaves the low bits of byte 4 intact",
+    "sourceDiff": "diff --git a/src/poly-math.ts b/src/poly-math.ts\nindex dd8ca36..c073bdf 100644\n--- a/src/poly-math.ts\n+++ b/src/poly-math.ts\n@@ -57,7 +57,7 @@ export function clampR(r: Uint8Array): bigint {\n \tclamped[7] &= 0x0f;\n \tclamped[11] &= 0x0f;\n \tclamped[15] &= 0x0f;\n-\tclamped[4] &= 0xfc;\n+\tclamped[4] &= 0xff;\n \tclamped[8] &= 0xfc;\n \tclamped[12] &= 0xfc;\n \n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "eac3e60afd8aef8e6e92ed763d1f0211efbcb7c8a0bac9fbaf2c7acd73b47d7a",
+    "namedTest": "clamps r to the documented value",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "ambiguous key recovery guesses the first surviving candidate",
+    "sourceDiff": "diff --git a/src/poly-math.ts b/src/poly-math.ts\nindex dd8ca36..547ec5c 100644\n--- a/src/poly-math.ts\n+++ b/src/poly-math.ts\n@@ -293,7 +293,7 @@ export function recoverKeyFromTagPairs(\n \n /** Refuse to guess when the captured pairs admit more than one valid key. */\n export function selectUniqueCandidate(candidates: RecoveredKey[]): RecoveredKey | null {\n-\treturn candidates.length === 1 ? candidates[0] : null;\n+\treturn candidates.length > 0 ? candidates[0] : null;\n }\n \n /** Forge a tag for a new single-block message from recovered (r, s). */\n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "2a7015cb3a34140d72bf6080cc34b27f92e2468a45aaed975d05eb2c626ad83c",
+    "namedTest": "reports ambiguity instead of guessing",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  },
+  {
+    "name": "forged tags skip reduction in the Poly1305 field",
+    "sourceDiff": "diff --git a/src/poly-math.ts b/src/poly-math.ts\nindex dd8ca36..c3a0ad2 100644\n--- a/src/poly-math.ts\n+++ b/src/poly-math.ts\n@@ -299,6 +299,6 @@ export function selectUniqueCandidate(candidates: RecoveredKey[]): RecoveredKey\n /** Forge a tag for a new single-block message from recovered (r, s). */\n export function forgeTag(recovered: RecoveredKey, message: string): Uint8Array {\n \tconst c = singleBlockInteger(message);\n-\tconst tagValue = (((c * recovered.r) % POLY1305_PRIME) + recovered.s) % TWO_POW_128;\n+\tconst tagValue = ((c * recovered.r) + recovered.s) % TWO_POW_128;\n \treturn bigIntToLittleEndian16(tagValue);\n }\n",
+    "baseline": "912464e3b07634c1502a269758b4ecbc88b40c6ee568f5b5cda7edd08a510360",
+    "mutant": "0e385fdeea77b07df12753c2342ee127edc9265d300a1410b78691a1fd2c84d1",
+    "namedTest": "forges a tag the genuine key accepts",
+    "assertionFailure": true,
+    "retries": 0,
+    "restoredGreen": true
+  }
+]
