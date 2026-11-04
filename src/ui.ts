@@ -12,6 +12,7 @@ import {
   computeSteps,
   forgeTag,
   recoverKeyCandidates,
+  selectUniqueCandidate,
   singleBlockInteger,
   tagBytesToInteger,
   utf8ByteLength,
@@ -945,7 +946,7 @@ function wireInteractions(elements: UIElements, state: AppState): void {
     // Only a single surviving candidate is a recovered key. Several candidates
     // all reproduce the two captured tags, so the attacker cannot tell which is
     // the sender's — saying otherwise would be a forgery this demo can't back up.
-    const recovered = candidates.length === 1 ? candidates[0] : null;
+    const recovered = selectUniqueCandidate(candidates);
     state.recoveredKey = recovered;
 
     if (!recovered) {
