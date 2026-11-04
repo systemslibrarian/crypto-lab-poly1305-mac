@@ -73,6 +73,21 @@ test('Dependabot leaves majors open and fails closed', () => {
   assert.match(ci, /update-type == 'version-update:semver-minor'/);
   assert.match(ci, /update-type == 'version-update:semver-patch'/);
   assert.match(ci, /if \[ "\$merged" != true \]; then[\s\S]*exit 1/);
-  assert.match(ci, /if ! gh workflow run pages\.yml[\s\S]*exit 1/);
+  // `gh workflow run` must start its own line so the fleet's dispatch census
+  // can see it, and must still fail the job rather than warn.
+  assert.match(ci, /\n\s*gh workflow run pages\.yml[^\n]*\\\n\s*\|\| \{[^}]*exit 1; \}/);
+
+  // The paragraph saying WHY that dispatch exists has to travel with it: a
+  // merge made with GITHUB_TOKEN raises no push event, so the dispatch is the
+  // only thing that ships a self-merged bump. Splitting pages.yml into
+  // ci.yml + browser-gate.yml moved the line and left the paragraph behind.
+  const dispatchAt = ci.indexOf('gh workflow run pages.yml');
+  const preceding = ci.slice(0, dispatchAt).split('\n');
+  preceding.pop();
+  const commentRun = [];
+  while (preceding.length > 0 && /^\s*#/.test(preceding[preceding.length - 1])) commentRun.unshift(preceding.pop());
+  const block = commentRun.join('\n');
+  assert.match(block, /raises no push event/, 'the rationale must sit directly above the dispatch');
+  assert.match(block, /is the same gate-then-deploy pipeline/, 'including its closing claim');
   assert.doesNotMatch(ci, /::warning::|exit 0/);
 });
