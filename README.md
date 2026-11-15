@@ -33,8 +33,10 @@ The forgery is real, not staged: the recovery solves `(c₁ − c₂)·r ≡ (t�
 - **TLS 1.3** — The `TLS_CHACHA20_POLY1305_SHA256` cipher suite uses Poly1305 as the MAC inside its AEAD, protecting every record on connections that negotiate this suite.
 - **WireGuard** — All tunnel packets are authenticated with ChaCha20-Poly1305, relying on Poly1305 for per-packet integrity and authenticity.
 - **OpenSSH** — The `chacha20-poly1305@openssh.com` cipher uses Poly1305 to authenticate both the packet length and payload, replacing the older HMAC-based transport MACs.
-- **NaCl / libsodium `crypto_secretbox`** — The widely deployed `secretbox` construction pairs XSalsa20 encryption with Poly1305 authentication, used in applications from Signal to Keybase.
+- **NaCl / libsodium `crypto_secretbox`** — The widely deployed `secretbox` construction pairs XSalsa20 encryption with Poly1305 authentication; Keybase, for one, documents its chat message encryption as NaCl's `crypto_secretbox` (XSalsa20, Poly1305).
 - **IETF RFC 8439** — The canonical specification for ChaCha20-Poly1305, referenced by QUIC (RFC 9001), Noise Protocol Framework, and other modern protocols.
+
+**Standards reviewed 15 November 2026:** Keybase's own documentation states that "message encryption is done with NaCl's `crypto_secretbox` (XSalsa20, Poly1305)" ([Keybase chat crypto](https://book.keybase.io/docs/chat/crypto)); its [KBFS design](https://book.keybase.io/docs/crypto/kbfs) and [saltpack format](https://saltpack.org/encryption-format-v2) also build on NaCl `secretbox`. Signal, previously named here alongside Keybase, has been removed: none of the six [Signal specifications](https://signal.org/docs/) mentions `secretbox` or XSalsa20, and the [Double Ratchet specification](https://signal.org/docs/specifications/doubleratchet/) recommends encrypting messages with "AES-256 in CBC mode with PKCS#7 padding" authenticated by HMAC.
 
 ## How to Run Locally
 
