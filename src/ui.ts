@@ -415,8 +415,9 @@ function createTemplate(): string {
               attackers refine forgeries.
             </p>
             <p>
-              This demo uses a constant-time XOR accumulation: diff starts at zero, every byte contributes with XOR, and
-              verification succeeds only if diff is still zero after all 16 bytes have been processed.
+              For two 16-byte tags, the verifier XORs each corresponding byte pair and ORs each difference into one result.
+              It reads all 16 positions and accepts exactly when the result is zero. This fixed loop avoids an early exit on a mismatch.
+              Source code alone cannot guarantee constant execution time in a JavaScript engine.
             </p>
           </div>
         </div>
@@ -594,7 +595,7 @@ function renderMathRows(elements: UIElements, steps: PolyStep[], key: Uint8Array
   if (steps.length === 0) {
     elements.mathStepsBody.innerHTML = `
       <tr>
-        <td colspan="7" class="math-empty">This message has no bytes, so there are no Poly1305 blocks to visualize.</td>
+        <td colspan="7" class="math-empty">This message has no bytes, so there are no Poly1305 blocks. The accumulator stays zero and the tag equals the 16-byte pad s (key bytes 16–31).</td>
       </tr>
     `;
     return;
